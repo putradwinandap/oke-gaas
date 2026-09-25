@@ -1,62 +1,47 @@
 # Oke Gaas — Gamification as a Service
 
-> **Status:** Concept / Source of Truth  
+> **Status:** Concept / Product Direction  
 > **Repository:** `putradwinandap/oke-gaas`  
-> **Project name:** Oke Gaas  
-> **Meaning:** Gamification as a Service (GaaS)
+> **Engineering source of truth:** [AGENTS.md](./AGENTS.md)
 
 ## 1. Overview
 
-**Oke Gaas** is an open-source gamification library/core with an optional hosted SaaS.
+**Oke Gaas** is open-source gamification infrastructure with an optional hosted SaaS.
 
 The goal is simple:
 
 > Let developers add gamification to Web2 applications without rebuilding XP, levels, achievements, streaks, leaderboards, challenges, rewards, and event processing from scratch.
 
-Oke Gaas should work as infrastructure rather than as a collection of UI gimmicks.
+Oke Gaas should behave as infrastructure rather than a collection of UI gimmicks.
 
-A product should be able to send application events to Oke Gaas, define rules, and let Oke Gaas calculate and persist gamification state.
+Applications describe what happened. Oke Gaas evaluates configured gamification rules, grants rewards, and maintains player gamification state.
 
-Example:
-
-```ts
-gaas.track("lesson_completed", {
-  userId: "user_123",
-  lessonId: "lesson_5",
-});
-```
-
-A rule could conceptually say:
+Conceptually:
 
 ```text
-WHEN lesson_completed
-GIVE 100 XP
-
-WHEN lesson_completed >= 10
-UNLOCK "Rajin Belajar"
-
-WHEN user is active for 7 consecutive days
-UNLOCK "7 Day Streak"
+Event -> Rule -> Reward -> Player State
 ```
 
 The application owns its business domain. Oke Gaas owns the gamification logic.
 
+For current architecture, engineering rules, terminology, testing requirements, and contribution workflow, see **AGENTS.md**.
+
 ---
 
-## 2. Product Philosophy
+## 2. Product Model
 
 Oke Gaas is planned as two complementary products.
 
-### Oke Gaas Core
+### Oke Gaas Open Source
 
-An open-source engine that can be used and self-hosted independently.
+The open-source product should contain the real gamification engine and remain genuinely useful when self-hosted.
 
-Core responsibilities may include:
+Capabilities may include:
 
 - event ingestion
-- rule evaluation
+- rules
 - rewards
-- user gamification state
+- player state
 - XP
 - levels
 - achievements
@@ -65,15 +50,15 @@ Core responsibilities may include:
 - leaderboards
 - challenges / quests
 - webhooks
-- persistence interfaces
-
-The open-source version should be genuinely useful by itself.
+- REST API
+- SDKs
+- self-hosting
 
 ### Oke Gaas Cloud
 
-A managed SaaS built on top of the same core concepts.
+A managed SaaS built on the same product concepts.
 
-Possible SaaS value:
+Cloud value may include:
 
 - hosted infrastructure
 - managed database
@@ -86,26 +71,20 @@ Possible SaaS value:
 - backups
 - scaling
 - webhook management
-- easier configuration
 - usage metering
+- billing
 
-The SaaS should primarily sell **convenience and operations**, not artificially cripple the open-source core.
+Guiding principle:
+
+> Open source contains the real product. Cloud primarily sells convenience, operations, collaboration, and managed infrastructure.
 
 ---
 
-## 3. Core Abstraction
-
-The initial architecture should stay small.
-
-The four fundamental primitives are:
-
-```text
-Event -> Rule -> Reward -> User State
-```
+## 3. Core Product Concepts
 
 ### Event
 
-Something that happened in the client application.
+Something that happened in the integrating application.
 
 Examples:
 
@@ -113,160 +92,57 @@ Examples:
 - `purchase_completed`
 - `article_published`
 - `daily_login`
-- `comment_created`
-
-Example:
-
-```json
-{
-  "type": "lesson_completed",
-  "userId": "user_123",
-  "properties": {
-    "lessonId": "lesson_5"
-  }
-}
-```
 
 ### Rule
 
-A condition that evaluates events and/or user state.
+A condition that evaluates events and/or gamification state.
 
-Conceptual example:
+Example:
 
 ```text
-WHEN event.type == "lesson_completed"
-THEN give 100 XP
+WHEN lesson_completed
+GIVE 100 XP
 ```
-
-Rules should eventually be expressive enough to support:
-
-- event conditions
-- counters
-- thresholds
-- time windows
-- consecutive activity
-- user attributes
-- accumulated state
-
-But the first version should deliberately remain small.
 
 ### Reward
 
-The result produced when a rule succeeds.
+An outcome produced by a matching rule.
 
 Examples:
 
 - grant XP
-- unlock badge
-- unlock achievement
+- unlock a badge
+- unlock an achievement
 - increment progress
-- change level
-- issue a custom reward event
+- change a level
+- emit a custom reward/domain event
 
-### User State
+### Player State
 
-The gamification state that Oke Gaas maintains for a user.
+The current gamification state for a player.
 
-Possible state:
+Possible state includes:
 
-```json
-{
-  "userId": "user_123",
-  "xp": 1250,
-  "level": 4,
-  "badges": ["first-win"],
-  "achievements": ["ten-lessons"],
-  "streak": {
-    "current": 7,
-    "longest": 12
-  }
-}
-```
+- XP
+- level
+- badges
+- achievements
+- streaks
+- progress
+
+The canonical domain term is **Player**, not User, for the gamified end user.
+
+Detailed semantics belong in `AGENTS.md` and eventually `docs/concepts/`.
 
 ---
 
-## 4. Why These Primitives Matter
+## 4. Developer Experience
 
-Features such as XP, achievements, badges, and streaks should not become isolated subsystems with unrelated logic.
+Developer experience is a primary product concern.
 
-Instead, they should preferably emerge from a common event/rule/reward model.
+A developer should need only a small number of concepts to integrate Oke Gaas.
 
-For example:
-
-```text
-lesson_completed
-       |
-       v
-     Rule
-       |
-       +------> +100 XP
-       |
-       +------> increment lesson counter
-       |
-       +------> unlock badge after 10 lessons
-```
-
-This keeps the engine extensible.
-
-A future product may need a gamification mechanic that was never anticipated by the original implementation. A generic rules/rewards foundation should make that possible without rewriting the architecture.
-
----
-
-## 5. High-Level Architecture
-
-```text
-+--------------------------+
-|     Client Application   |
-| Web / Mobile / Backend   |
-+------------+-------------+
-             |
-             | SDK / REST API
-             v
-+--------------------------+
-|        Oke Gaas API      |
-+------------+-------------+
-             |
-             v
-+--------------------------+
-|      Event Processor     |
-+------------+-------------+
-             |
-             v
-+--------------------------+
-|       Rules Engine       |
-+------------+-------------+
-             |
-      +------+------+
-      |             |
-      v             v
-+-----------+  +-------------+
-| Rewards   |  | User State  |
-+-----------+  +-------------+
-      |             |
-      +------+------+
-             |
-             v
-+--------------------------+
-|        Database          |
-+--------------------------+
-
-Optional:
-- Dashboard
-- Analytics
-- Webhooks
-- Leaderboards
-- Admin tooling
-```
-
----
-
-## 6. Developer Experience
-
-The developer experience is a major part of the product.
-
-A developer integrating Oke Gaas should ideally need only a few concepts.
-
-Example client setup:
+Conceptual SDK usage:
 
 ```ts
 import { createGaas } from "@oke-gaas/sdk";
@@ -274,42 +150,26 @@ import { createGaas } from "@oke-gaas/sdk";
 const gaas = createGaas({
   apiKey: process.env.OKE_GAAS_API_KEY,
 });
-```
 
-Track an event:
-
-```ts
 await gaas.track("lesson_completed", {
-  userId: "user_123",
+  playerId: "player_123",
   properties: {
     lessonId: "lesson_5",
   },
 });
+
+const player = await gaas.players.get("player_123");
 ```
 
-Read player state:
+The public API is not yet a compatibility commitment.
 
-```ts
-const player = await gaas.players.get("user_123");
-
-console.log(player.xp);
-console.log(player.level);
-console.log(player.badges);
-```
-
-The SDK API shown here is conceptual and is **not yet a locked public API**.
+The API should remain small, predictable, framework-agnostic, and easy to integrate.
 
 ---
 
-## 7. Open Source and SaaS Boundary
+## 5. Open Source and Cloud Boundary
 
-A guiding principle:
-
-> Open source should contain the real gamification engine. Cloud should make running it easier.
-
-Possible split:
-
-| Capability | Core / Self-hosted | Cloud |
+| Capability | Open Source / Self-hosted | Cloud |
 |---|---:|---:|
 | Event API | Yes | Yes |
 | Rules engine | Yes | Yes |
@@ -328,20 +188,20 @@ Possible split:
 | Usage analytics | Basic | Yes |
 | Scaling / operations | User-owned | Managed |
 
-This boundary is provisional and may evolve.
+This boundary is provisional and can evolve as real usage is discovered.
 
 ---
 
-## 8. Initial MVP
+## 6. Initial MVP
 
-The MVP should prove one complete vertical slice rather than implementing every gamification feature.
+The MVP should prove one complete vertical slice instead of implementing every mechanic.
 
-### MVP Flow
+Target flow:
 
 ```text
 Application
     |
-    | send event
+    | event
     v
 Oke Gaas
     |
@@ -351,48 +211,49 @@ Reward
     |
     | update
     v
-User State
+Player State
     |
     v
 Application reads result
 ```
 
-A valid first vertical slice could be:
+A valid first vertical slice:
 
 1. Create a project.
-2. Create/register a user.
-3. Define one event.
+2. Create/register a player.
+3. Define one event type/use case.
 4. Define one simple rule.
-5. Send the event.
-6. Match the rule.
-7. Grant XP.
-8. Persist XP.
-9. Retrieve the user's XP.
-10. Cover the flow with automated tests.
+5. Send an event with stable identity.
+6. Process the event idempotently.
+7. Match the rule.
+8. Grant XP.
+9. Persist reward history and player state.
+10. Retrieve the player's XP.
+11. Cover the flow with automated tests.
 
 Example:
 
 ```text
-lesson_completed -> +100 XP -> user total becomes 300 XP
+lesson_completed -> +100 XP -> player total becomes 300 XP
 ```
 
-If this works reliably through a public API, the core architecture has proven itself.
+If this works reliably through a public API, the first core product slice is proven.
 
 ---
 
-## 9. MVP Scope
+## 7. MVP Scope
 
 ### In scope
 
 - projects
 - API authentication
-- users / players
+- players
 - events with stable identity
 - idempotent event ingestion
 - simple rules
 - XP reward
-- reward grant / audit history
-- persisted user state
+- reward/audit history
+- persisted player state
 - REST API
 - initial JavaScript/TypeScript SDK
 - automated tests
@@ -404,7 +265,7 @@ If this works reliably through a public API, the core architecture has proven it
 
 - advanced visual rule builder
 - marketplace
-- dozens of SDK languages
+- many SDK languages
 - complex quest graphs
 - social feeds
 - notifications platform
@@ -413,511 +274,18 @@ If this works reliably through a public API, the core architecture has proven it
 - complex organization permissions
 - highly customizable white-label UI
 
-The project should avoid becoming a giant engagement platform before the core engine is proven.
+Do not let Oke Gaas become a giant engagement platform before the engine is proven.
 
 ---
 
-## 10. Possible Repository Structure
-
-This is a working proposal, not a locked decision.
-
-```text
-oke-gaas/
-├── apps/
-│   ├── dashboard/
-│   └── docs/
-│
-├── packages/
-│   ├── core/
-│   ├── sdk-js/
-│   └── shared/
-│
-├── services/
-│   └── api/
-│
-├── examples/
-│   └── basic-web/
-│
-├── docs/
-│   ├── architecture/
-│   ├── decisions/
-│   └── concepts/
-│
-├── tests/
-├── README.md
-└── PROJECT.md
-```
-
-The final structure should follow the actual implementation language and deployment model rather than forcing a monorepo prematurely.
-
----
-
-## 11. Design Principles
-
-### 11.1 Event-driven first
-
-Client applications should describe **what happened**, not implement gamification calculations themselves.
-
-Prefer:
-
-```ts
-gaas.track("purchase_completed", ...);
-```
-
-over:
-
-```ts
-gaas.addXp(500);
-gaas.incrementPurchaseBadge();
-gaas.updateLeaderboard();
-```
-
-The latter tightly couples the application to gamification internals.
-
-### 11.2 Server-authoritative state
-
-Important gamification state should not rely solely on browser storage.
-
-The server/core should remain authoritative for XP, achievements, rewards, and leaderboard state.
-
-### 11.3 Idempotency
-
-Event APIs should support idempotency from the initial vertical slice so retries do not accidentally grant rewards twice.
-
-Example concern:
-
-```text
-payment_completed sent twice
-!=
-reward granted twice
-```
-
-### 11.4 Auditable rewards
-
-Ideally, rewards can be traced back to the event and rule that produced them.
-
-This will help with:
-
-- debugging
-- disputes
-- analytics
-- rollback
-- fraud prevention
-
-### 11.5 Framework agnostic
-
-The core should not depend on React, Next.js, Laravel, WordPress, or another application framework.
-
-Framework adapters can exist separately.
-
-### 11.6 Simple before clever
-
-Do not start with a highly sophisticated DSL or distributed architecture.
-
-Prove the primitive flow first.
-
----
-
-## 12. Initial Architecture Decision
-
-Oke Gaas should begin as an **event-driven modular monolith**, using **lightweight Domain-Driven Design (DDD)** to keep domain boundaries explicit.
-
-The initial architecture is intentionally **not microservices**.
-
-These terms describe different architectural dimensions and should not be treated as mutually exclusive choices:
-
-- **Event-driven architecture** describes how important application behavior is initiated and propagated through events.
-- **Modular monolith** describes the initial deployment architecture: one deployable application with clear internal module boundaries.
-- **DDD** provides language and domain boundaries, not a requirement to use every enterprise pattern.
-- **Distributed systems** become relevant when components run across independent processes, nodes, queues, or services.
-- **Microservices** are a possible future deployment evolution when independently deployable boundaries are justified by real operational or scaling needs.
-
-Initial direction:
-
-```text
-Oke Gaas
-├── Architectural style
-│   └── Event-driven
-├── Deployment model
-│   └── Modular monolith
-├── Domain modeling
-│   └── Lightweight DDD
-├── Persistence
-│   └── PostgreSQL preferred initially
-├── Processing
-│   └── Synchronous first
-└── Evolution
-    └── Async / distributed components only when justified
-```
-
-The guiding rule is:
-
-> Design strong boundaries now; distribute them later only if there is a concrete reason.
-
-### 12.1 Initial module boundaries
-
-Likely domain modules include:
-
-```text
-Project
-Player
-Event
-Rule
-Reward
-Progression
-Achievement
-Leaderboard
-Webhook
-```
-
-Not every module must exist in the MVP.
-
-Dependencies should remain intentional. A conceptual direction is:
-
-```text
-External Event
-      |
-      v
-    Event
-      |
-      v
-     Rule
-      |
-      v
-    Reward
-      |
-      v
- Player State
-
-Domain Events
-   |
-   +--> Leaderboard
-   +--> Webhook
-   +--> Analytics
-```
-
-Modules should communicate through explicit interfaces or domain/application events rather than reaching arbitrarily into each other's persistence internals.
-
-Avoid circular dependencies such as:
-
-```text
-Leaderboard -> Achievement -> Player -> Rule -> Leaderboard
-```
-
-### 12.2 External events vs domain events
-
-Oke Gaas should distinguish events received from client applications from events produced internally by the gamification domain.
-
-An **external/application event** describes something that happened in the integrating application:
-
-```text
-lesson_completed
-purchase_completed
-article_published
-daily_login
-```
-
-A **domain event** describes something meaningful that happened inside Oke Gaas after processing:
-
-```text
-XpGranted
-PlayerLeveledUp
-AchievementUnlocked
-StreakAdvanced
-```
-
-Conceptually:
-
-```text
-lesson_completed
-       |
-       v
-   Rule Engine
-       |
-       v
-      Reward
-       |
-       +--> XpGranted
-       +--> PlayerLeveledUp
-       +--> AchievementUnlocked
-```
-
-This separation allows future features such as webhooks, analytics, leaderboards, notifications, and asynchronous processing to react to domain outcomes without coupling themselves directly to rule evaluation.
-
-### 12.3 Event identity and idempotency
-
-Event identity is a first-class concern and should be included early rather than treated only as a later optimization.
-
-A conceptual event envelope:
-
-```json
-{
-  "event_id": "evt_xxx",
-  "type": "lesson_completed",
-  "project_id": "proj_xxx",
-  "player_id": "player_xxx",
-  "occurred_at": "2026-09-25T10:00:00Z",
-  "properties": {
-    "lesson_id": "lesson_5"
-  }
-}
-```
-
-The system may also record server-generated metadata such as `received_at`.
-
-A stable event identity supports:
-
-- retry safety
-- deduplication
-- debugging
-- auditability
-- reward tracing
-- abuse prevention
-
-For externally retried requests, the API should support an idempotency mechanism so the same logical event cannot accidentally grant the same reward multiple times.
-
-### 12.4 Reward ledger
-
-Rewards should not exist only as mutations such as:
-
-```text
-player.xp += 100
-```
-
-Oke Gaas should preserve an auditable reward record.
-
-Conceptually:
-
-```text
-RewardGrant
-├── id
-├── project_id
-├── player_id
-├── event_id
-├── rule_id
-├── rule_version
-├── reward_type
-├── amount / payload
-├── created_at
-└── reversed_at (optional)
-```
-
-This creates a trace:
-
-```text
-Event
-  |
-  v
-Rule Version
-  |
-  v
-Reward Grant
-  |
-  v
-Player State
-```
-
-A reward ledger supports:
-
-- debugging
-- disputes
-- analytics
-- anti-cheat controls
-- reward reversals
-- reconstruction of why a player has a particular state
-
-The current player state can remain a fast materialized representation while reward history preserves the audit trail.
-
-### 12.5 Rule versioning
-
-Rules should be version-aware.
-
-For example:
-
-```text
-lesson_completed -> +100 XP   (version 1)
-lesson_completed -> +50 XP    (version 2)
-```
-
-Historical rewards must remain traceable to the rule definition that produced them.
-
-A reward grant should therefore be able to reference both:
-
-```text
-rule_id
-rule_version
-```
-
-Changing a rule should not rewrite the historical meaning of previously processed events.
-
-### 12.6 Transaction boundary
-
-For the initial synchronous implementation, processing one event should have a clear transaction boundary.
-
-Conceptually:
-
-```text
-receive event
-
-BEGIN TRANSACTION
-
-persist / deduplicate event
-evaluate applicable rules
-create reward grants
-update player state
-
-COMMIT
-```
-
-The exact implementation may evolve, but the invariant is important:
-
-> An accepted event must not leave reward history and player state in an unintentionally inconsistent partial state.
-
-Side effects that cannot safely participate in the same database transaction, such as external webhooks, should eventually be decoupled.
-
-### 12.7 Event-driven does not require a message broker
-
-The first implementation does **not** need Kafka, RabbitMQ, NATS, Redis Streams, or another broker merely to qualify as event-driven.
-
-V1 may process events synchronously:
-
-```text
-POST /events
-     |
-     v
-validate + persist event
-     |
-     v
-evaluate rules
-     |
-     v
-apply rewards
-     |
-     v
-persist player state
-```
-
-A queue or worker should be introduced only when there is a concrete requirement such as:
-
-- expensive processing
-- burst handling
-- independent retries
-- webhook delivery
-- analytics fan-out
-- isolation of slow workloads
-- throughput requirements that synchronous processing cannot meet
-
-### 12.8 Event sourcing stance
-
-Oke Gaas should **not begin with full Event Sourcing**.
-
-However, it should preserve useful event-sourcing properties:
-
-```text
-append-oriented event history
-+
-reward ledger
-+
-current materialized player state
-```
-
-Conceptually:
-
-```text
-events
-reward_grants
-player_state
-```
-
-This provides strong auditability without requiring the entire application state to be reconstructed from an event stream in v1.
-
-Full Event Sourcing should only be adopted later if concrete requirements justify its operational and modeling complexity.
-
-### 12.9 Future asynchronous evolution and Outbox Pattern
-
-If domain events later need to be delivered asynchronously, the system should consider a **Transactional Outbox** before splitting into distributed services.
-
-Problem:
-
-```text
-database commit succeeds
-message publish fails
-```
-
-Possible future flow:
-
-```text
-BEGIN
-
-update player state
-insert reward grant
-insert outbox event
-
-COMMIT
-
-      |
-      v
-background worker
-      |
-      v
-publish domain event
-```
-
-This is intentionally a future concern, not an MVP requirement.
-
-### 12.10 Microservices and distributed systems
-
-Microservices are not an initial goal.
-
-Possible future extraction may look like:
-
-```text
-Modular Monolith
-      |
-      +--> extract only where justified
-                |
-                +--> Leaderboard Service
-                +--> Webhook Worker
-                +--> Analytics Pipeline
-```
-
-Extraction should be driven by evidence such as:
-
-- independent scaling needs
-- different reliability characteristics
-- clearly stable domain boundaries
-- separate deployment cadence
-- operational isolation
-- materially different storage or compute needs
-
-Do not split a module into a service merely because it has a name.
-
-A distributed architecture introduces additional concerns such as:
-
-- network failures
-- retries and duplicate delivery
-- event ordering
-- schema compatibility
-- eventual consistency
-- distributed observability
-- deployment coordination
-- cross-service authorization
-- failure recovery
-
-Those costs should only be accepted when the benefits are concrete.
-
----
-
-## 13. Example Use Cases
-
-Oke Gaas could serve products such as:
+## 8. Example Use Cases
 
 ### Education
 
 - XP for completing lessons
 - course streaks
 - learning achievements
-- leaderboard for cohorts
+- cohort leaderboards
 
 ### E-commerce
 
@@ -947,62 +315,13 @@ Oke Gaas could serve products such as:
 - usage milestones
 - referral mechanics
 
-Oke Gaas should provide primitives for these patterns rather than hard-code one industry.
+Oke Gaas should provide reusable primitives for these patterns instead of hard-coding one industry.
 
 ---
 
-## 14. Possible API Model
+## 9. Rules Engine Product Evolution
 
-Conceptual only:
-
-```http
-POST /v1/events
-GET  /v1/players/:id
-GET  /v1/players/:id/rewards
-
-POST /v1/rules
-GET  /v1/rules
-PATCH /v1/rules/:id
-
-GET /v1/leaderboards/:id
-```
-
-Event example:
-
-```json
-POST /v1/events
-
-{
-  "event": "lesson_completed",
-  "user_id": "user_123",
-  "idempotency_key": "lesson-5-user-123",
-  "properties": {
-    "lesson_id": "lesson_5"
-  }
-}
-```
-
-Possible response:
-
-```json
-{
-  "accepted": true,
-  "rewards": [
-    {
-      "type": "xp",
-      "amount": 100
-    }
-  ]
-}
-```
-
-Again, this API is exploratory and not a compatibility commitment.
-
----
-
-## 15. Rules Engine Evolution
-
-A phased approach is preferred.
+The rules engine should grow only when real use cases require additional expressiveness.
 
 ### Phase 1 — Exact event rules
 
@@ -1041,45 +360,16 @@ Possible later concepts:
 - reusable predicates
 - rolling windows
 - scheduled evaluation
-- rule versions
 - rule priorities
 - reward limits
 
-Complexity should be introduced only when real use cases demand it.
+Architecture and implementation details for rules belong in `AGENTS.md` and `docs/`.
 
 ---
 
-## 16. Future Technical Concerns
+## 10. SaaS Concerns
 
-These do not all belong in the first implementation, but should be kept visible.
-
-- event idempotency
-- concurrency
-- duplicate delivery
-- transaction boundaries
-- rule versioning
-- event ordering
-- async processing
-- retry policy
-- webhook delivery
-- rate limiting
-- project isolation
-- multi-tenancy
-- caching
-- leaderboard performance
-- anti-cheat / abuse controls
-- audit logs
-- reward reversals
-- privacy / deletion workflows
-- observability
-
----
-
-## 17. SaaS Concerns
-
-Cloud-specific capabilities may eventually include:
-
-### Projects and environments
+Cloud may eventually introduce project environments such as:
 
 ```text
 Project
@@ -1088,19 +378,13 @@ Project
 └── production
 ```
 
-### API keys
-
-Keys should be scoped appropriately.
-
-Potential distinction:
+Possible key types:
 
 - server secret key
 - public/client identifier
 - webhook secret
 
-Sensitive operations should never depend on a secret embedded in frontend code.
-
-### Usage
+Sensitive operations must not depend on secrets embedded in frontend code.
 
 Possible metered units:
 
@@ -1109,15 +393,15 @@ Possible metered units:
 - API calls
 - rule executions
 
-Pricing is deliberately **not decided yet**.
+Pricing is deliberately not decided yet.
 
-Do not design the core around a pricing model that has not been validated.
+Do not design the core around an unvalidated pricing model.
 
 ---
 
-## 18. Naming and Brand
+## 11. Naming and Brand
 
-Project:
+Project name:
 
 # Oke Gaas
 
@@ -1125,7 +409,7 @@ Expansion:
 
 > **Gamification as a Service**
 
-The name intentionally plays on the Indonesian expression **"Oke, gaas!"**, making it memorable while still mapping naturally to the acronym **GaaS**.
+The name plays on the Indonesian expression **"Oke, gaas!"** while mapping naturally to **GaaS**.
 
 Possible professional tagline:
 
@@ -1139,88 +423,41 @@ The playful brand can coexist with a serious developer-focused product.
 
 ---
 
-## 19. Project Rules
+## 12. Product Principles
 
-Until changed by an explicit project decision:
-
-1. **The repository is the source of truth.**
-2. Architectural decisions should be documented.
-3. Prefer vertical slices over large disconnected foundations.
-4. Keep the initial domain model small.
-5. New abstractions must solve a concrete problem.
-6. Core should remain useful without Oke Gaas Cloud.
-7. Avoid unnecessary vendor lock-in.
-8. Public APIs should not be considered stable until intentionally versioned.
-9. Automated tests are part of a feature, not optional cleanup.
-10. CI failures should be fixed rather than normalized.
-11. Documentation must evolve together with architecture.
-12. Significant changes to the vision should update this file.
+1. The open-source product must be genuinely useful independently.
+2. Prefer a complete vertical slice over broad disconnected foundations.
+3. Keep the initial product model small.
+4. Add complexity only when it solves a concrete problem.
+5. Developer experience is part of the product.
+6. Avoid unnecessary vendor lock-in.
+7. Public APIs are not stable until intentionally versioned.
+8. Do not optimize the product around an unvalidated SaaS pricing model.
+9. Documentation must evolve with product decisions.
+10. Engineering and architecture rules belong in `AGENTS.md`, not duplicated here.
 
 ---
 
-## 20. Recommended Development Strategy
-
-Build one end-to-end path first:
-
-```text
-SDK
- |
- v
-POST /events
- |
- v
-event validation
- |
- v
-rule evaluation
- |
- v
-XP reward
- |
- v
-database transaction
- |
- v
-GET /players/:id
- |
- v
-updated XP returned
-```
-
-This vertical slice should include:
-
-- domain model
-- persistence
-- API
-- tests
-- SDK call
-- example
-- documentation
-
-Only after this path is clean should additional game mechanics be layered on top.
-
----
-
-## 21. Initial Roadmap
+## 13. Initial Roadmap
 
 ### Phase 0 — Foundation
 
-- define project vision
-- document architecture
+- define product vision
+- establish engineering rules
 - select implementation stack
 - decide license
 - define contribution workflow
 - establish CI
+- establish initial `/docs` structure
 
 ### Phase 1 — Core vertical slice
 
 - project model
 - player model
-- event model and stable event identity
-- idempotent event ingestion
-- rule model with version-aware design
+- event ingestion
+- simple rule
 - XP reward
-- reward grant / audit history
+- reward history
 - persisted player state
 - REST endpoint
 - SDK
@@ -1236,12 +473,11 @@ Only after this path is clean should additional game mechanics be layered on top
 
 ### Phase 3 — Operational maturity
 
-- asynchronous processing where justified
-- transactional outbox if asynchronous publishing is introduced
 - webhooks
 - rate limiting
 - observability
-- better error handling
+- stronger error handling
+- asynchronous processing only where justified
 
 ### Phase 4 — Self-hosted experience
 
@@ -1261,92 +497,75 @@ Only after this path is clean should additional game mechanics be layered on top
 - usage metering
 - billing
 
-This roadmap is directional, not a commitment to exact implementation order.
+The roadmap is directional, not a commitment to exact implementation order.
 
 ---
 
-## 22. Open Questions
+## 14. Open Product Questions
 
-Important decisions still intentionally unresolved:
+Still intentionally unresolved:
 
-- What implementation language/runtime should power the modular monolith?
-- PostgreSQL is the preferred initial persistence layer; are there implementation constraints that would invalidate it?
-- Which workloads, if any, justify asynchronous processing after the synchronous v1 is proven?
-- How should rules be represented internally?
-- Should the rules API start as JSON configuration or code?
-- Which open-source license should be used?
-- How much UI belongs in the open-source project?
-- What is the exact boundary between Core and Cloud?
+- Which implementation language/runtime should power the first release?
 - What is the first real application used to dogfood Oke Gaas?
+- How much UI belongs in the open-source distribution?
+- What is the long-term boundary between open-source packaging and Cloud?
+- Which open-source license should be used?
+- Which initial gamification use case best validates the product?
+- How should pricing eventually map to real customer value?
 
-These should be answered through small architectural decisions rather than assumptions buried in code.
+Engineering questions and architectural decisions should be recorded in `AGENTS.md` and/or `docs/decisions/`.
 
 ---
 
-## 23. Context for AI Agents and Future Chats
+## 15. Documentation Evolution
 
-If an AI assistant is asked to work on this repository, treat this document as project context.
+`PROJECT.md` is intentionally not the engineering source of truth.
 
-### Project identity
-
-- Name: **Oke Gaas**
-- Meaning: **Gamification as a Service**
-- Repository: **putradwinandap/oke-gaas**
-- Model: **open-source core + optional hosted SaaS**
-- Primary audience: **developers adding gamification to Web2 applications**
-
-### Core concept
+The intended repository documentation model is:
 
 ```text
-Event -> Rule -> Reward -> User State
+PROJECT.md
+    product vision, scope, use cases, roadmap
+
+AGENTS.md
+    engineering source of truth
+
+docs/architecture/
+    detailed architecture
+
+docs/decisions/
+    architectural decision records
+
+docs/concepts/
+    domain concept documentation
+
+GitHub Issues
+    small, actionable implementation work
 ```
 
-### Primary goal
+As implementation starts, larger concepts currently summarized here may be decomposed into focused GitHub Issues and durable `/docs` pages.
 
-Make gamification infrastructure reusable so application developers do not need to repeatedly build systems such as XP, levels, achievements, badges, streaks, leaderboards, and challenges from scratch.
-
-### Architecture preference
-
-Start with a small vertical slice implemented as an **event-driven modular monolith** with **lightweight DDD**.
-
-Use synchronous processing first. Keep module boundaries explicit so individual workloads can be extracted later if real scaling or operational requirements justify distribution.
-
-Do **not** prematurely implement every mechanic, microservices architecture, message broker, full Event Sourcing, complex DSL, or large admin dashboard.
-
-### Product boundary
-
-The open-source core must remain useful independently.
-
-The SaaS should primarily provide managed infrastructure, operations, analytics, collaboration, and convenience.
-
-### Source-of-truth rule
-
-When future discussion changes a major project decision, update repository documentation so later AI sessions can recover context from the repo rather than depending on chat memory.
+Avoid duplicating the same authoritative rule in multiple documents.
 
 ---
 
-## 24. Current State
+## 16. Current State
 
-At the time this document was created:
+At this stage:
 
-- repository has been initialized
-- product concept exists
-- no implementation language/runtime has been locked
-- no public API has been locked
-- PostgreSQL is the preferred initial persistence layer, subject to implementation validation
-- initial deployment direction is an event-driven modular monolith
-- initial processing direction is synchronous-first
-- lightweight DDD will be used to keep domain boundaries explicit
-- full Event Sourcing and microservices are intentionally deferred
-- no SaaS pricing has been decided
-- implementation details are still intentionally small and evolving
+- repository is initialized
+- product direction is defined
+- initial MVP is defined
+- engineering architecture has a baseline in `AGENTS.md`
+- implementation language/runtime is not yet locked
+- public API is not yet locked
+- SaaS pricing is not decided
+- implementation has not yet been built in detail
 
-The next useful step is to turn the concept into the smallest testable technical architecture and vertical slice.
+The next useful step is to select the initial stack and turn the MVP into small implementation issues.
 
 ---
 
-## 25. Short Version
+## 17. Short Version
 
-If only a few lines of context can be loaded:
-
-> **Oke Gaas** is an open-source Gamification as a Service engine plus an optional hosted SaaS. Developers send application events; Oke Gaas evaluates rules, grants auditable rewards, and maintains user gamification state. The foundational model is **Event -> Rule -> Reward -> User State**. Start as an **event-driven modular monolith** with **lightweight DDD**, **synchronous processing**, stable event identity/idempotency, version-aware rules, a reward ledger, and PostgreSQL as the preferred initial persistence layer. Keep append-oriented event history plus materialized player state; do not begin with microservices, a message broker, or full Event Sourcing. Extract asynchronous/distributed components only when concrete requirements justify them. The OSS core must remain genuinely usable independently; the SaaS primarily sells managed operations and convenience.
+> **Oke Gaas** is open-source Gamification as a Service infrastructure plus an optional hosted SaaS. Developers send application events; Oke Gaas evaluates rules, grants rewards, and maintains player gamification state. The foundational product model is **Event -> Rule -> Reward -> Player State**. Start with one complete vertical slice before adding advanced mechanics. The open-source product must remain genuinely useful independently, while Cloud primarily sells managed infrastructure and convenience. **PROJECT.md describes the product; AGENTS.md is the authoritative source for architecture, coding standards, testing, consistency, and engineering workflow.**
