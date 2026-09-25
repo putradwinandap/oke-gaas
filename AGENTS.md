@@ -126,7 +126,107 @@ Prefer explicit interfaces, application services, or domain/application events b
 
 ---
 
-## 4. Product Boundary
+## 4. Initial Technology Stack
+
+The initial implementation stack is locked to:
+
+```text
+Language              Go
+HTTP framework        Fiber v3
+ORM                   GORM
+Database              PostgreSQL
+Validation            go-playground/validator
+Logging               log/slog
+Testing               Go testing + testify
+API documentation     OpenAPI / Swagger
+Observability         OpenTelemetry
+Containerization      Docker
+```
+
+Pin concrete dependency versions in implementation files such as `go.mod`; do not rely on floating "latest" behavior.
+
+### 4.1 Framework boundary
+
+Fiber is a delivery-layer concern.
+
+Do not allow Fiber-specific types, request contexts, middleware contracts, or response objects to leak into the domain model.
+
+Preferred dependency direction:
+
+```text
+Fiber Handler
+     |
+     v
+Application Service
+     |
+     v
+Domain
+     |
+     v
+Repository Interface
+     |
+     v
+GORM / PostgreSQL
+```
+
+Domain logic must remain testable without starting an HTTP server.
+
+### 4.2 ORM boundary
+
+GORM is a persistence/infrastructure detail, not the domain model.
+
+Prefer keeping persistence mapping concerns separate from domain behavior when doing so protects the domain boundary.
+
+Do not design aggregates around GORM convenience.
+
+Do not expose `*gorm.DB` across domain/application boundaries.
+
+Transactions should be owned by an application/infrastructure boundary with explicit intent.
+
+### 4.3 ORM does not prohibit SQL
+
+Use GORM when it keeps persistence simple and readable.
+
+Raw SQL is allowed when it is clearer, safer, or materially better suited to the query.
+
+Examples include:
+
+- leaderboard ranking/window functions
+- aggregate analytics
+- performance-sensitive reporting
+- complex joins that become harder to understand through ORM chaining
+
+Do not write ORM gymnastics merely to avoid SQL.
+
+### 4.4 Go-specific baseline
+
+All Go code must follow idiomatic Go conventions.
+
+At minimum:
+
+- format with `gofmt`
+- use `go vet`
+- keep package responsibilities narrow
+- return and wrap errors intentionally
+- avoid global mutable state
+- pass `context.Context` explicitly where request/deadline/cancellation propagation is required
+- keep exported APIs documented
+- prefer standard-library solutions unless a dependency provides clear value
+- avoid unnecessary interfaces; define interfaces at useful consumer boundaries
+- keep constructors explicit
+- avoid panic for ordinary runtime/application errors
+
+Additional linting may be added later through an explicit repository decision.
+
+See:
+
+- `docs/architecture/overview.md`
+- `docs/decisions/001-initial-technology-stack.md`
+- `docs/decisions/002-modular-monolith.md`
+
+---
+
+## 5. Product Boundary
 
 Keep these responsibilities conceptually distinct.
 
@@ -173,7 +273,7 @@ The open-source core must remain genuinely useful without Oke Gaas Cloud.
 
 ---
 
-## 5. Project and Tenant Isolation
+## 6. Project and Tenant Isolation
 
 `Project` is a security and data-isolation boundary.
 
@@ -197,7 +297,7 @@ Tenant isolation must be covered by automated tests when persistence and authori
 
 ---
 
-## 6. Event Model
+## 7. Event Model
 
 ### 6.1 External events
 
@@ -263,7 +363,7 @@ The exact public API shape is not yet permanently locked, but implementation mus
 
 ---
 
-## 7. Rule Model and Versioning
+## 8. Rule Model and Versioning
 
 Rules must be version-aware.
 
@@ -291,7 +391,7 @@ Prefer the smallest representation that supports the current vertical slice.
 
 ---
 
-## 8. Reward Ledger and Player State
+## 9. Reward Ledger and Player State
 
 Do not model rewards only as direct mutations such as:
 
@@ -347,7 +447,7 @@ This supports:
 
 ---
 
-## 9. Transaction Boundary
+## 10. Transaction Boundary
 
 Initial event processing is synchronous.
 
@@ -377,7 +477,7 @@ When asynchronous side effects are introduced, use an appropriate reliable-deliv
 
 ---
 
-## 10. Event-Driven Does Not Mean Broker-Driven
+## 11. Event-Driven Does Not Mean Broker-Driven
 
 Do not introduce Kafka, RabbitMQ, NATS, Redis Streams, or another broker merely because the architecture is event-driven.
 
@@ -411,7 +511,7 @@ Introduce queues/workers only when justified by requirements such as:
 
 ---
 
-## 11. Event Sourcing Stance
+## 12. Event Sourcing Stance
 
 Do not begin with full Event Sourcing.
 
@@ -429,7 +529,7 @@ Full Event Sourcing requires an explicit architectural decision backed by concre
 
 ---
 
-## 12. Future Async / Distributed Evolution
+## 13. Future Async / Distributed Evolution
 
 Before splitting the system into services, prefer extracting asynchronous work only where it provides a clear benefit.
 
@@ -466,7 +566,7 @@ Do not split a module into a service merely because it has a name.
 
 ---
 
-## 13. Privacy and Historical Data
+## 14. Privacy and Historical Data
 
 The system intentionally keeps event and reward history for auditability.
 
@@ -486,7 +586,7 @@ Do not silently hard-delete or retain historical data without an explicit docume
 
 ---
 
-## 14. Coding Standards
+## 15. Coding Standards
 
 All production code must follow established international software engineering conventions for the selected language/runtime.
 
@@ -516,7 +616,7 @@ Code should be understandable by an experienced engineer unfamiliar with the fea
 
 ---
 
-## 15. Engineering Principles
+## 16. Engineering Principles
 
 The following principles are mandatory defaults.
 
@@ -560,7 +660,7 @@ Errors should provide useful context and should not leave persistent state incon
 
 ---
 
-## 16. Consistency Rules
+## 17. Consistency Rules
 
 Consistency is a project requirement.
 
@@ -588,7 +688,7 @@ Whenever a consistency rule changes materially, update this file.
 
 ---
 
-## 17. Testing Policy
+## 18. Testing Policy
 
 Unit tests are mandatory.
 
@@ -620,7 +720,7 @@ Prefer fast deterministic tests.
 
 ---
 
-## 18. Definition of Done
+## 19. Definition of Done
 
 A logical change is complete only when applicable items are satisfied:
 
@@ -642,7 +742,7 @@ Fix failures or explicitly revert the offending change.
 
 ---
 
-## 19. Git and Branch Workflow
+## 20. Git and Branch Workflow
 
 Keep commits scoped to logical changes.
 
@@ -672,7 +772,7 @@ Do not leave stale completed branches or completed issues open without a reason.
 
 ---
 
-## 20. Documentation Rules
+## 21. Documentation Rules
 
 Documentation is part of the implementation.
 
@@ -704,8 +804,8 @@ When detail moves from `PROJECT.md` into `/docs`, preserve links/context rather 
 
 ---
 
-## 21. Current Architecture Summary
+## 22. Current Architecture Summary
 
 When context is limited, preserve at least this:
 
-> Oke Gaas uses an event-driven modular monolith with lightweight DDD, synchronous processing first, and PostgreSQL preferred initially. The canonical domain flow is **Event -> Rule -> Reward -> Player State**. Use **Player** for gamified end users. Project is the tenant/isolation boundary. Events require stable identity and idempotent ingestion. Rewards must produce an auditable reward ledger and rules are version-aware. Preserve transactional consistency between event processing, reward grants, and player state. Do not introduce microservices, a message broker, or full Event Sourcing without a concrete requirement. Unit tests are mandatory. Maintain code/style consistency, update AGENTS.md whenever architecture or engineering consistency changes, and after merge delete completed branches and update/close the related issue.
+> Oke Gaas uses Go with Fiber v3, GORM, and PostgreSQL in an event-driven modular monolith with lightweight DDD and synchronous processing first. The canonical domain flow is **Event -> Rule -> Reward -> Player State**. Use **Player** for gamified end users. Project is the tenant/isolation boundary. Events require stable identity and idempotent ingestion. Rewards must produce an auditable reward ledger and rules are version-aware. Preserve transactional consistency between event processing, reward grants, and player state. Do not introduce microservices, a message broker, or full Event Sourcing without a concrete requirement. Unit tests are mandatory. Maintain code/style consistency, update AGENTS.md whenever architecture or engineering consistency changes, and after merge delete completed branches and update/close the related issue.
