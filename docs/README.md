@@ -1,0 +1,29 @@
+# Oke Gaas Documentation
+
+This directory contains durable technical documentation.
+
+Authority remains split intentionally:
+
+- `PROJECT.md` — product vision, scope, use cases, roadmap.
+- `AGENTS.md` — authoritative engineering rules, architecture constraints, coding standards, testing, and workflow.
+- `docs/architecture/` — detailed architectural explanations.
+- `docs/decisions/` — Architecture Decision Records (ADRs).
+- `docs/concepts/` — domain concepts and semantics.
+- GitHub Issues — small actionable implementation work.
+
+## Architecture
+
+- [Architecture Overview](./architecture/overview.md)
+
+## Decisions
+
+- [ADR-001: Initial Technology Stack](./decisions/001-initial-technology-stack.md)
+- [ADR-002: Event-Driven Modular Monolith](./decisions/002-modular-monolith.md)
+
+## Concepts
+
+- [Events](./concepts/events.md)
+- [Projects and Players](./concepts/projects-and-players.md)
+- [Rules and Rewards](./concepts/rules-and-rewards.md)
+
+When an architectural or engineering rule changes, update `AGENTS.md` in the same logical change and update the relevant document here when deeper explanation is useful.
