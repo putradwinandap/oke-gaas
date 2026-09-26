@@ -3,6 +3,7 @@ package progression
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/player"
@@ -87,9 +88,13 @@ func (s *Service) Process(ctx context.Context, command event.IngestCommand) (*Pr
 
 		var xp int64
 		for _, grant := range result.Grants {
-			if grant != nil && grant.Type() == reward.TypeXP {
-				xp += grant.Amount()
+			if grant == nil || grant.Type() != reward.TypeXP {
+				continue
 			}
+			if grant.Amount() > math.MaxInt64-xp {
+				return fmt.Errorf("sum reward xp: overflow")
+			}
+			xp += grant.Amount()
 		}
 		if xp == 0 {
 			return nil
