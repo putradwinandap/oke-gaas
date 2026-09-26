@@ -49,7 +49,6 @@ func TestGenerateProjectKeyRequiresProject(t *testing.T) {
 	require.Empty(t, secret)
 }
 
-
 func TestServiceAuthenticateRejectsMissingRepositoryWithoutPanic(t *testing.T) {
 	service := NewService(nil)
 
