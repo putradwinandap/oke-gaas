@@ -168,12 +168,16 @@ func New(dependencies ...Dependencies) *fiber.App {
 		})
 		if err != nil {
 			switch {
-			case errors.Is(err, eventdomain.ErrInvalidID), errors.Is(err, eventdomain.ErrIDTooLong):
+			case errors.Is(err, eventdomain.ErrInvalidID):
 				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidID.Error())
+			case errors.Is(err, eventdomain.ErrIDTooLong):
+				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrIDTooLong.Error())
 			case errors.Is(err, eventdomain.ErrInvalidPlayerID):
 				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidPlayerID.Error())
-			case errors.Is(err, eventdomain.ErrInvalidType), errors.Is(err, eventdomain.ErrTypeTooLong):
+			case errors.Is(err, eventdomain.ErrInvalidType):
 				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidType.Error())
+			case errors.Is(err, eventdomain.ErrTypeTooLong):
+				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrTypeTooLong.Error())
 			case errors.Is(err, eventdomain.ErrInvalidOccurredAt):
 				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidOccurredAt.Error())
 			case errors.Is(err, eventdomain.ErrInvalidProperties):
