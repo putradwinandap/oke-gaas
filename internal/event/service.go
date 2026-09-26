@@ -11,8 +11,8 @@ import (
 
 type Service struct {
 	players player.Repository
-	events Repository
-	now func() time.Time
+	events  Repository
+	now     func() time.Time
 }
 
 func NewService(players player.Repository, events Repository) *Service {
@@ -20,16 +20,16 @@ func NewService(players player.Repository, events Repository) *Service {
 }
 
 type IngestCommand struct {
-	ID string
-	ProjectID string
-	PlayerID string
-	Type string
+	ID         string
+	ProjectID  string
+	PlayerID   string
+	Type       string
 	OccurredAt time.Time
 	Properties map[string]any
 }
 
 type IngestResult struct {
-	Event *Event
+	Event     *Event
 	Duplicate bool
 }
 
@@ -43,22 +43,30 @@ func (s *Service) Ingest(ctx context.Context, command IngestCommand) (*IngestRes
 		s.now(),
 		command.Properties,
 	)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	if _, err := s.players.GetByID(ctx, candidate.ProjectID(), candidate.PlayerID()); err != nil {
-		if errors.Is(err, player.ErrNotFound) { return nil, ErrPlayerNotInProject }
+		if errors.Is(err, player.ErrNotFound) {
+			return nil, ErrPlayerNotInProject
+		}
 		return nil, fmt.Errorf("verify player ownership: %w", err)
 	}
 
 	if err := s.events.Save(ctx, candidate); err == nil {
-		return &IngestResult{Event:candidate}, nil
+		return &IngestResult{Event: candidate}, nil
 	} else if !errors.Is(err, ErrAlreadyExists) {
 		return nil, fmt.Errorf("save event: %w", err)
 	}
 
 	existing, err := s.events.GetByID(ctx, candidate.ProjectID(), candidate.ID())
-	if err != nil { return nil, fmt.Errorf("load existing event after duplicate: %w", err) }
-	if !existing.SameLogicalEvent(candidate) { return nil, ErrIdentityConflict }
+	if err != nil {
+		return nil, fmt.Errorf("load existing event after duplicate: %w", err)
+	}
+	if !existing.SameLogicalEvent(candidate) {
+		return nil, ErrIdentityConflict
+	}
 
-	return &IngestResult{Event:existing, Duplicate:true}, nil
+	return &IngestResult{Event: existing, Duplicate: true}, nil
 }
