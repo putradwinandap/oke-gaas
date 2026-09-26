@@ -16,7 +16,7 @@ Engineering rules and architectural constraints live in [AGENTS.md](./AGENTS.md)
 
 - Go 1.26+
 - PostgreSQL for persistence-backed features
-- Node.js 22+ when developing the TypeScript SDK
+- Node.js 22+ for the TypeScript SDK
 
 ### Run the API
 
