@@ -33,8 +33,6 @@ func openIntegrationDatabase(t *testing.T) *gorm.DB {
 
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS event_processing CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS player_states CASCADE").Error)
-	require.NoError(t, db.Exec("DROP TABLE IF EXISTS event_processing CASCADE").Error)
-	require.NoError(t, db.Exec("DROP TABLE IF EXISTS player_states CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS reward_grants CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS rules CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS events CASCADE").Error)
