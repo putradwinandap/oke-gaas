@@ -786,11 +786,34 @@ Do not mix unrelated refactors, formatting changes, and feature behavior in one 
 
 Before merge:
 
+- perform a manual code review before spending GitHub Actions CI quota
+- run the relevant formatter, static checks, unit tests, and integration tests locally first
+- do not automatically trigger PR CI merely because a PR is opened, synchronized, or receives another commit
+- after manual review finds the change ready for validation, trigger the PR CI workflow manually
 - tests must pass
 - CI must be green
 - review feedback must be resolved
 - relevant documentation must be current
 - issue acceptance criteria must be satisfied
+
+### 20.1 CI execution and quota policy
+
+GitHub Actions CI is a final remote validation gate, not the first feedback loop.
+
+For pull requests:
+
+1. Review the diff manually first for correctness, security, architecture, consistency, and obvious defects.
+2. Fix review findings before running remote CI.
+3. Run the equivalent checks locally whenever practical.
+4. Trigger CI manually only after the review is satisfied that the PR is ready for remote validation.
+5. If CI fails, diagnose and reproduce the failure locally before triggering another run whenever practical.
+6. Do not repeatedly re-run CI to discover problems that can be found through local tests, formatting, vetting, or manual review.
+
+The PR workflow should therefore use an explicit manual trigger such as `workflow_dispatch` rather than automatically running on every `pull_request` synchronization.
+
+CI on the default branch may still run automatically after merge as a final repository-health check.
+
+Exception: automatic PR CI may be reintroduced only through an explicit engineering decision when the repository's risk profile, team size, branch-protection requirements, or available CI quota justify it.
 
 After a branch is merged:
 
