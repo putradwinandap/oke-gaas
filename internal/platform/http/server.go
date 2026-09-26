@@ -1,6 +1,7 @@
 package http
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
 	"strings"
@@ -226,6 +227,10 @@ func New(dependencies ...Dependencies) *fiber.App {
 		})
 	})
 
+	app.Use(func(c fiber.Ctx) error {
+		return writeError(c, fiber.StatusNotFound, "not_found", "endpoint not found")
+	})
+
 	return app
 }
 
@@ -251,10 +256,9 @@ func validBearer(header, expected string) bool {
 	if !ok || strings.TrimSpace(expected) == "" {
 		return false
 	}
-	if len(secret) != len(expected) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(secret), []byte(expected)) == 1
+	expectedHash := sha256.Sum256([]byte(expected))
+	secretHash := sha256.Sum256([]byte(secret))
+	return subtle.ConstantTimeCompare(secretHash[:], expectedHash[:]) == 1
 }
 
 func bearer(header string) (string, bool) {
