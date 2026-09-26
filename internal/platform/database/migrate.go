@@ -137,6 +137,33 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		},
 	}
 
+	if err := db.Exec(`
+		INSERT INTO player_states (project_id, player_id, xp, updated_at)
+		SELECT
+			p.project_id,
+			p.id,
+			COALESCE(SUM(r.amount), 0),
+			COALESCE(MAX(r.created_at), p.created_at)
+		FROM players p
+		LEFT JOIN reward_grants r
+			ON r.project_id = p.project_id
+		   AND r.player_id = p.id
+		   AND r.reward_type = 'xp'
+		GROUP BY p.project_id, p.id, p.created_at
+		ON CONFLICT (project_id, player_id) DO NOTHING
+	`).Error; err != nil {
+		return fmt.Errorf("backfill development player state: %w", err)
+	}
+
+	if err := db.Exec(`
+		INSERT INTO event_processing (project_id, event_id, processed_at)
+		SELECT project_id, id, received_at
+		FROM events
+		ON CONFLICT (project_id, event_id) DO NOTHING
+	`).Error; err != nil {
+		return fmt.Errorf("backfill development event processing: %w", err)
+	}
+
 	for _, constraint := range constraints {
 		if err := ensureDevelopmentForeignKey(
 			db,
