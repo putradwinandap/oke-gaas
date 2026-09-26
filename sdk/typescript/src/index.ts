@@ -1,9 +1,16 @@
 const DEFAULT_BASE_URL = "http://localhost:8080";
+const DEFAULT_TIMEOUT_MS = 15_000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 export interface GaasConfig {
   projectId: string;
   apiKey: string;
   baseUrl?: string;
+  timeoutMs?: number;
+}
+
+export interface RequestOptions {
+  signal?: AbortSignal;
 }
 
 export interface CreatePlayerInput {
@@ -87,21 +94,25 @@ interface ApiRule {
   xp: number;
 }
 
+interface ApiRewardGrant {
+  id: string;
+  rule_id: string;
+  rule_version: number;
+  reward_type: string;
+  amount: number;
+}
+
+interface ApiTrackPlayerState {
+  player_id: string;
+  xp: number;
+  updated_at?: string;
+}
+
 interface ApiTrackResult {
   event_id: string;
   duplicate: boolean;
-  grants: Array<{
-    id: string;
-    rule_id: string;
-    rule_version: number;
-    reward_type: string;
-    amount: number;
-  }>;
-  state: {
-    player_id: string;
-    xp: number;
-    updated_at?: string;
-  };
+  grants: ApiRewardGrant[];
+  state: ApiTrackPlayerState;
 }
 
 interface ApiPlayerState {
@@ -109,6 +120,11 @@ interface ApiPlayerState {
   player_id: string;
   xp: number;
   updated_at?: string;
+}
+
+interface RequestResult {
+  payload: unknown;
+  status: number;
 }
 
 /** Error returned by the Oke Gaas SDK for HTTP, transport, or response failures. */
@@ -130,15 +146,15 @@ export interface GaasClient {
    * for this call. Supply eventId explicitly when idempotency must survive a new
    * process or a caller-managed retry.
    */
-  track(eventType: string, input: TrackInput): Promise<TrackResult>;
+  track(eventType: string, input: TrackInput, options?: RequestOptions): Promise<TrackResult>;
   players: {
-    create(input: CreatePlayerInput): Promise<Player>;
+    create(input: CreatePlayerInput, options?: RequestOptions): Promise<Player>;
     /** Retrieve the current materialized Player State. */
-    get(playerId: string): Promise<PlayerState>;
+    get(playerId: string, options?: RequestOptions): Promise<PlayerState>;
   };
   rules: {
     /** Create a version-1 exact-event XP rule. */
-    create(input: CreateRuleInput): Promise<Rule>;
+    create(input: CreateRuleInput, options?: RequestOptions): Promise<Rule>;
   };
 }
 
@@ -153,9 +169,14 @@ export function createGaas(config: GaasConfig): GaasClient {
   const projectId = requireNonEmpty(config.projectId, "projectId");
   const apiKey = requireNonEmpty(config.apiKey, "apiKey");
   const baseUrl = normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL);
+  const timeoutMs = normalizeTimeoutMs(config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const projectPath = `/v1/projects/${encodeURIComponent(projectId)}`;
 
-  const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+  const request = async (
+    path: string,
+    init: RequestInit = {},
+    options: RequestOptions = {},
+  ): Promise<RequestResult> => {
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
     headers.set("Authorization", `Bearer ${apiKey}`);
@@ -163,17 +184,34 @@ export function createGaas(config: GaasConfig): GaasClient {
       headers.set("Content-Type", "application/json");
     }
 
+    const requestSignal = createRequestSignal(options.signal, timeoutMs);
     let response: Response;
+    let text: string;
+
     try {
       response = await fetch(`${baseUrl}${path}`, {
         ...init,
         headers,
+        signal: requestSignal.signal,
       });
+      text = await response.text();
     } catch (cause) {
+      if (requestSignal.didTimeout()) {
+        throw new GaasError(
+          "timeout_error",
+          `request to Oke Gaas exceeded ${timeoutMs}ms`,
+          undefined,
+          { cause },
+        );
+      }
+      if (requestSignal.wasCallerAborted()) {
+        throw new GaasError("request_aborted", "request to Oke Gaas was aborted", undefined, { cause });
+      }
       throw new GaasError("network_error", "request to Oke Gaas failed", undefined, { cause });
+    } finally {
+      requestSignal.cleanup();
     }
 
-    const text = await response.text();
     const payload = parseJson(text);
 
     if (!response.ok) {
@@ -184,32 +222,35 @@ export function createGaas(config: GaasConfig): GaasClient {
     }
 
     if (payload === undefined) {
-      throw new GaasError(
-        "invalid_response",
-        "Oke Gaas returned an invalid or empty JSON response",
-        response.status,
-      );
+      throw invalidResponse(response.status);
     }
 
-    return payload as T;
+    return { payload, status: response.status };
   };
 
   return {
-    async track(eventType, input) {
-      const occurredAt = input.occurredAt instanceof Date
-        ? input.occurredAt.toISOString()
-        : input.occurredAt ?? new Date().toISOString();
-      const eventId = input.eventId ?? generateEventId();
-      const value = await request<ApiTrackResult>(`${projectPath}/events`, {
-        method: "POST",
-        body: JSON.stringify({
-          event_id: eventId,
-          player_id: input.playerId,
-          type: eventType,
-          occurred_at: occurredAt,
-          properties: input.properties ?? {},
-        }),
-      });
+    async track(eventType, input, options) {
+      const normalizedEventType = requireNonEmpty(eventType, "eventType");
+      const playerId = requireNonEmpty(input.playerId, "playerId");
+      const eventId = input.eventId === undefined
+        ? generateEventId()
+        : requireNonEmpty(input.eventId, "eventId");
+      const occurredAt = normalizeOccurredAt(input.occurredAt);
+      const result = await request(
+        `${projectPath}/events`,
+        {
+          method: "POST",
+          body: stringifyJson({
+            event_id: eventId,
+            player_id: playerId,
+            type: normalizedEventType,
+            occurred_at: occurredAt,
+            properties: input.properties ?? {},
+          }),
+        },
+        options,
+      );
+      const value = requireApiTrackResult(result.payload, result.status);
 
       return {
         eventId: value.event_id,
@@ -230,11 +271,17 @@ export function createGaas(config: GaasConfig): GaasClient {
     },
 
     players: {
-      async create(input) {
-        const value = await request<ApiPlayer>(`${projectPath}/players`, {
-          method: "POST",
-          body: JSON.stringify({ external_id: input.externalId }),
-        });
+      async create(input, options) {
+        const externalId = requireNonEmpty(input.externalId, "externalId");
+        const result = await request(
+          `${projectPath}/players`,
+          {
+            method: "POST",
+            body: stringifyJson({ external_id: externalId }),
+          },
+          options,
+        );
+        const value = requireApiPlayer(result.payload, result.status);
         return {
           id: value.id,
           projectId: value.project_id,
@@ -243,10 +290,14 @@ export function createGaas(config: GaasConfig): GaasClient {
         };
       },
 
-      async get(playerId) {
-        const value = await request<ApiPlayerState>(
-          `${projectPath}/players/${encodeURIComponent(playerId)}/state`,
+      async get(playerId, options) {
+        const normalizedPlayerId = requireNonEmpty(playerId, "playerId");
+        const result = await request(
+          `${projectPath}/players/${encodeURIComponent(normalizedPlayerId)}/state`,
+          {},
+          options,
         );
+        const value = requireApiPlayerState(result.payload, result.status);
         return {
           projectId: value.project_id,
           playerId: value.player_id,
@@ -257,11 +308,18 @@ export function createGaas(config: GaasConfig): GaasClient {
     },
 
     rules: {
-      async create(input) {
-        const value = await request<ApiRule>(`${projectPath}/rules`, {
-          method: "POST",
-          body: JSON.stringify({ event_type: input.eventType, xp: input.xp }),
-        });
+      async create(input, options) {
+        const eventType = requireNonEmpty(input.eventType, "eventType");
+        const xp = requirePositiveSafeInteger(input.xp, "xp");
+        const result = await request(
+          `${projectPath}/rules`,
+          {
+            method: "POST",
+            body: stringifyJson({ event_type: eventType, xp }),
+          },
+          options,
+        );
+        const value = requireApiRule(result.payload, result.status);
         return {
           id: value.id,
           projectId: value.project_id,
@@ -281,6 +339,20 @@ function requireNonEmpty(value: string, name: string): string {
   return value;
 }
 
+function requirePositiveSafeInteger(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
+  return value;
+}
+
+function normalizeTimeoutMs(value: number): number {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > MAX_TIMEOUT_MS) {
+    throw new TypeError(`timeoutMs must be an integer between 1 and ${MAX_TIMEOUT_MS}`);
+  }
+  return value;
+}
+
 function normalizeBaseUrl(value: string): string {
   let url: URL;
   try {
@@ -291,7 +363,31 @@ function normalizeBaseUrl(value: string): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new TypeError("baseUrl must use http or https");
   }
-  return value.replace(/\/+$/, "");
+  if (url.username !== "" || url.password !== "") {
+    throw new TypeError("baseUrl must not contain credentials");
+  }
+  if (url.search !== "") {
+    throw new TypeError("baseUrl must not contain a query string");
+  }
+  if (url.hash !== "") {
+    throw new TypeError("baseUrl must not contain a fragment");
+  }
+
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  return url.toString().replace(/\/+$/, "");
+}
+
+function normalizeOccurredAt(value: Date | string | undefined): string {
+  if (value === undefined) {
+    return new Date().toISOString();
+  }
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      throw new TypeError("occurredAt must be a valid Date");
+    }
+    return value.toISOString();
+  }
+  return requireNonEmpty(value, "occurredAt");
 }
 
 function generateEventId(): string {
@@ -302,6 +398,21 @@ function generateEventId(): string {
     );
   }
   return `evt_${globalThis.crypto.randomUUID()}`;
+}
+
+function stringifyJson(value: unknown): string {
+  try {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) {
+      throw new TypeError("request body is not JSON-serializable");
+    }
+    return encoded;
+  } catch (cause) {
+    if (cause instanceof TypeError && cause.message === "request body is not JSON-serializable") {
+      throw cause;
+    }
+    throw new TypeError("request body must be JSON-serializable", { cause });
+  }
 }
 
 function parseJson(value: string): unknown {
@@ -316,12 +427,145 @@ function parseJson(value: string): unknown {
 }
 
 function isApiErrorEnvelope(value: unknown): value is ApiErrorEnvelope {
-  if (typeof value !== "object" || value === null || !("error" in value)) {
+  if (!isRecord(value) || !isRecord(value.error)) {
     return false;
   }
-  const error = (value as { error?: unknown }).error;
-  return typeof error === "object"
-    && error !== null
-    && typeof (error as { code?: unknown }).code === "string"
-    && typeof (error as { message?: unknown }).message === "string";
+  return typeof value.error.code === "string" && typeof value.error.message === "string";
+}
+
+function requireApiPlayer(value: unknown, status: number): ApiPlayer {
+  if (!isApiPlayer(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
+function requireApiRule(value: unknown, status: number): ApiRule {
+  if (!isApiRule(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
+function requireApiTrackResult(value: unknown, status: number): ApiTrackResult {
+  if (!isApiTrackResult(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
+function requireApiPlayerState(value: unknown, status: number): ApiPlayerState {
+  if (!isApiPlayerState(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
+function invalidResponse(status: number): GaasError {
+  return new GaasError(
+    "invalid_response",
+    "Oke Gaas returned an invalid or empty JSON response",
+    status,
+  );
+}
+
+function isApiPlayer(value: unknown): value is ApiPlayer {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.project_id === "string"
+    && typeof value.external_id === "string"
+    && typeof value.created_at === "string";
+}
+
+function isApiRule(value: unknown): value is ApiRule {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.project_id === "string"
+    && isPositiveSafeInteger(value.version)
+    && typeof value.event_type === "string"
+    && isPositiveSafeInteger(value.xp);
+}
+
+function isApiRewardGrant(value: unknown): value is ApiRewardGrant {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.rule_id === "string"
+    && isPositiveSafeInteger(value.rule_version)
+    && typeof value.reward_type === "string"
+    && Number.isSafeInteger(value.amount);
+}
+
+function isApiTrackPlayerState(value: unknown): value is ApiTrackPlayerState {
+  return isRecord(value)
+    && typeof value.player_id === "string"
+    && isNonNegativeSafeInteger(value.xp)
+    && isOptionalString(value.updated_at);
+}
+
+function isApiTrackResult(value: unknown): value is ApiTrackResult {
+  return isRecord(value)
+    && typeof value.event_id === "string"
+    && typeof value.duplicate === "boolean"
+    && Array.isArray(value.grants)
+    && value.grants.every(isApiRewardGrant)
+    && isApiTrackPlayerState(value.state);
+}
+
+function isApiPlayerState(value: unknown): value is ApiPlayerState {
+  return isRecord(value)
+    && typeof value.project_id === "string"
+    && typeof value.player_id === "string"
+    && isNonNegativeSafeInteger(value.xp)
+    && isOptionalString(value.updated_at);
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function createRequestSignal(callerSignal: AbortSignal | undefined, timeoutMs: number): {
+  signal: AbortSignal;
+  cleanup: () => void;
+  didTimeout: () => boolean;
+  wasCallerAborted: () => boolean;
+} {
+  const controller = new AbortController();
+  let timedOut = false;
+
+  const timeoutID = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  const onCallerAbort = () => {
+    controller.abort(callerSignal?.reason);
+  };
+
+  if (callerSignal?.aborted) {
+    onCallerAbort();
+  } else {
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeoutID);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
+    },
+    didTimeout: () => timedOut,
+    wasCallerAborted: () => callerSignal?.aborted === true,
+  };
 }
