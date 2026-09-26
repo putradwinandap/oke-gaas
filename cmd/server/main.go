@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/putradwinandap/oke-gaas/internal/access"
 	"github.com/putradwinandap/oke-gaas/internal/platform/config"
@@ -19,7 +20,7 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if len(cfg.AdminAPIKey) < 32 || strings.IndexFunc(cfg.AdminAPIKey, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }) >= 0 {
+	if len(cfg.AdminAPIKey) < 32 || strings.IndexFunc(cfg.AdminAPIKey, unicode.IsSpace) >= 0 {
 		slog.Error("OKE_GAAS_ADMIN_API_KEY must be at least 32 non-whitespace-separated characters")
 		os.Exit(1)
 	}

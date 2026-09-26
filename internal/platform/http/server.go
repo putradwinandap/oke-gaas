@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	recoverer "github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/putradwinandap/oke-gaas/internal/access"
 	eventdomain "github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/player"
@@ -31,7 +32,8 @@ type Dependencies struct {
 
 // New creates the HTTP delivery adapter for the Oke Gaas API.
 func New(dependencies ...Dependencies) *fiber.App {
-	app := fiber.New()
+	app := fiber.New(fiber.Config{ErrorHandler: apiErrorHandler})
+	app.Use(recoverer.New())
 
 	app.Get("/health", func(c fiber.Ctx) error {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
@@ -288,6 +290,29 @@ func bearer(header string) (string, bool) {
 		return "", false
 	}
 	return parts[1], true
+}
+
+func apiErrorHandler(c fiber.Ctx, err error) error {
+	status := fiber.StatusInternalServerError
+	code := "internal_error"
+	message := "internal server error"
+
+	var fiberErr *fiber.Error
+	if errors.As(err, &fiberErr) && fiberErr != nil {
+		status = fiberErr.Code
+		message = fiberErr.Message
+		code = "request_error"
+		switch status {
+		case fiber.StatusNotFound:
+			code = "not_found"
+		case fiber.StatusMethodNotAllowed:
+			code = "method_not_allowed"
+		case fiber.StatusRequestEntityTooLarge:
+			code = "request_too_large"
+		}
+	}
+
+	return writeError(c, status, code, message)
 }
 
 func writeError(c fiber.Ctx, status int, code, message string) error {
