@@ -4,12 +4,13 @@ This directory contains durable technical documentation.
 
 Authority remains split intentionally:
 
-- `PROJECT.md` — product vision, scope, use cases, roadmap.
 - `AGENTS.md` — authoritative engineering rules, architecture constraints, coding standards, testing, and workflow.
 - `docs/architecture/` — detailed architectural explanations.
 - `docs/decisions/` — Architecture Decision Records (ADRs).
 - `docs/concepts/` — domain concepts and semantics.
-- GitHub Issues — small actionable implementation work.
+- GitHub Issues — product direction, roadmap, acceptance criteria, and actionable implementation work.
+
+The umbrella product-direction issue is [#1 — define Oke Gaas product direction and boundaries](https://github.com/putradwinandap/oke-gaas/issues/1).
 
 ## Architecture
 
