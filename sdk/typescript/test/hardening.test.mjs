@@ -148,3 +148,24 @@ test("rule XP must stay within JavaScript safe-integer precision", async () => {
     /positive safe integer/,
   );
 });
+
+
+test("baseUrl path prefixes remain supported for reverse proxies", async () => {
+  await withServer((request, response) => {
+    assert.equal(request.url, "/gateway/v1/projects/proj_test/players/player_123/state");
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      project_id: "proj_test",
+      player_id: "player_123",
+      xp: 42,
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({
+      projectId: "proj_test",
+      apiKey: "secret",
+      baseUrl: `${baseUrl}/gateway/`,
+    });
+    const state = await gaas.players.get("player_123");
+    assert.equal(state.xp, 42);
+  });
+});
