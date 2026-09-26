@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func openIntegrationDatabase(t *testing.T) *gorm.DB {
 
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS players").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS projects").Error)
-	require.NoError(t, MigrateCore(db))
+	require.NoError(t, AutoMigrateCoreForDevelopment(db))
 
 	return db
 }
@@ -83,6 +84,37 @@ func TestPlayerRepositoryEnforcesProjectScopedIdentityAndIsolation(t *testing.T)
 	duplicate, err := player.New(projectA.ID(), "customer-42", time.Now())
 	require.NoError(t, err)
 	require.ErrorIs(t, players.Save(ctx, duplicate), player.ErrExternalIDTaken)
+}
+
+func TestPlayerRepositoryDoesNotMapOtherUniqueConstraintsToExternalIDTaken(t *testing.T) {
+	db := openIntegrationDatabase(t)
+	projects := NewProjectRepository(db)
+	players := NewPlayerRepository(db)
+	ctx := context.Background()
+
+	owningProject, err := project.New("Project A", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, projects.Save(ctx, owningProject))
+
+	existing, err := player.New(owningProject.ID(), "customer-42", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, players.Save(ctx, existing))
+
+	samePrimaryKey, err := player.Restore(
+		existing.ID(),
+		owningProject.ID(),
+		"customer-43",
+		time.Now(),
+	)
+	require.NoError(t, err)
+
+	err = players.Save(ctx, samePrimaryKey)
+	require.Error(t, err)
+	require.False(t, errors.Is(err, player.ErrExternalIDTaken))
+
+	var uniqueErr *UniqueConstraintError
+	require.ErrorAs(t, err, &uniqueErr)
+	require.Equal(t, "players_pkey", uniqueErr.Constraint)
 }
 
 func TestPlayerRepositoryRejectsUnknownProject(t *testing.T) {
