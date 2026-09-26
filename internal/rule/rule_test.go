@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -30,4 +31,10 @@ func TestRuleRequiresExplicitPositiveVersionAndXP(t *testing.T) {
 
 	_, err = New("rule_lesson", "proj_1", 1, "lesson_completed", 0)
 	require.ErrorIs(t, err, ErrInvalidXPAmount)
+}
+
+func TestRuleRejectsEventTypeLongerThanPersistenceLimit(t *testing.T) {
+	value, err := New("rule_1", "proj_1", 1, strings.Repeat("x", 256), 100)
+	require.ErrorIs(t, err, ErrEventTypeTooLong)
+	require.Nil(t, value)
 }
