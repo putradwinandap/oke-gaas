@@ -6,7 +6,7 @@ const defaultHTTPAddr = ":8080"
 
 // Config contains process-level configuration for the Oke Gaas server.
 type Config struct {
-	HTTPAddr   string
+	HTTPAddr    string
 	DatabaseURL string
 }
 
@@ -18,7 +18,7 @@ func Load() Config {
 	}
 
 	return Config{
-		HTTPAddr:   httpAddr,
+		HTTPAddr:    httpAddr,
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 	}
 }
