@@ -118,7 +118,15 @@ test("baseUrl rejects credentials, query strings, and fragments", () => {
     /query string/,
   );
   assert.throws(
+    () => createGaas({ ...base, baseUrl: "https://example.com?" }),
+    /query string/,
+  );
+  assert.throws(
     () => createGaas({ ...base, baseUrl: "https://example.com#fragment" }),
+    /fragment/,
+  );
+  assert.throws(
+    () => createGaas({ ...base, baseUrl: "https://example.com#" }),
     /fragment/,
   );
 });
@@ -148,7 +156,6 @@ test("rule XP must stay within JavaScript safe-integer precision", async () => {
     /positive safe integer/,
   );
 });
-
 
 test("baseUrl path prefixes remain supported for reverse proxies", async () => {
   await withServer((request, response) => {
