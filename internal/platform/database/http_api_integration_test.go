@@ -204,7 +204,6 @@ func TestProjectAPIKeyCannotCrossTenantBoundary(t *testing.T) {
 	require.Equal(t, "unauthorized", errorBody["code"])
 }
 
-
 func TestProjectCannotUseAnotherProjectsPlayer(t *testing.T) {
 	db := openHTTPIntegrationDatabase(t)
 	app := newHTTPIntegrationApp(db)
