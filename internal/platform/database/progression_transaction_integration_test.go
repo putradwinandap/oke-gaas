@@ -30,7 +30,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	for _, table := range []string{"event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -38,6 +38,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000002_events.up.sql",
 		"../../../migrations/000003_rules_rewards.up.sql",
 		"../../../migrations/000004_player_state.up.sql",
+		"../../../migrations/000005_event_processing.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -96,7 +97,7 @@ func TestProgressionTransactionIsIdempotentAndMaterializesXP(t *testing.T) {
 	require.Len(t, grants, 1)
 }
 
-func TestProgressionTransactionRollsBackGrantWhenStateUpdateFails(t *testing.T) {
+func TestProgressionTransactionRollsBackGrantStateAndProcessingClaim(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
 	ctx := context.Background()
 	proj, pl := seedProgressionFixture(t, db, 1)
@@ -106,13 +107,15 @@ func TestProgressionTransactionRollsBackGrantWhenStateUpdateFails(t *testing.T) 
 	require.NoError(t, err)
 
 	service := progression.NewService(NewProgressionTransactor(db))
-	_, err = service.Process(ctx, eventdomain.IngestCommand{
+	command := eventdomain.IngestCommand{
 		ID:         "evt_overflow",
 		ProjectID:  proj.ID(),
 		PlayerID:   pl.ID(),
 		Type:       "lesson_completed",
 		OccurredAt: time.Now().Add(-time.Minute),
-	})
+	}
+
+	_, err = service.Process(ctx, command)
 	require.Error(t, err)
 
 	_, err = NewEventRepository(db).GetByID(ctx, proj.ID(), "evt_overflow")
@@ -122,7 +125,61 @@ func TestProgressionTransactionRollsBackGrantWhenStateUpdateFails(t *testing.T) 
 	require.NoError(t, err)
 	require.Empty(t, grants)
 
-	state, err := states.Get(ctx, proj.ID(), pl.ID())
+	var claimCount int64
+	require.NoError(t, db.Table("event_processing").
+		Where("project_id = ? AND event_id = ?", proj.ID(), "evt_overflow").
+		Count(&claimCount).Error)
+	require.Zero(t, claimCount)
+
+	require.NoError(t, db.Model(&playerStateRecord{}).
+		Where("project_id = ? AND player_id = ?", proj.ID(), pl.ID()).
+		Update("xp", 0).Error)
+
+	retry, err := service.Process(ctx, command)
 	require.NoError(t, err)
-	require.Equal(t, int64(^uint64(0)>>1), state.XP())
+	require.False(t, retry.Duplicate)
+	require.Len(t, retry.Grants, 1)
+	require.Equal(t, int64(1), retry.State.XP())
+}
+
+func TestEventProcessingClaimPreventsReprocessingExistingEvent(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+	proj, pl := seedProgressionFixture(t, db, 100)
+
+	ev, err := eventdomain.New(
+		"evt_legacy",
+		proj.ID(),
+		pl.ID(),
+		"lesson_completed",
+		time.Now().Add(-time.Hour),
+		time.Now().Add(-time.Minute),
+		nil,
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewEventRepository(db).Save(ctx, ev))
+
+	require.NoError(t, db.Exec(
+		"INSERT INTO event_processing (project_id, event_id, processed_at) VALUES (?, ?, ?)",
+		proj.ID(),
+		ev.ID(),
+		ev.ReceivedAt(),
+	).Error)
+
+	states := NewPlayerStateRepository(db)
+	_, err = states.Ensure(ctx, proj.ID(), pl.ID(), ev.ReceivedAt())
+	require.NoError(t, err)
+
+	service := progression.NewService(NewProgressionTransactor(db))
+	result, err := service.Process(ctx, eventdomain.IngestCommand{
+		ID:         ev.ID(),
+		ProjectID:  ev.ProjectID(),
+		PlayerID:   ev.PlayerID(),
+		Type:       ev.Type(),
+		OccurredAt: ev.OccurredAt(),
+	})
+	require.NoError(t, err)
+	require.True(t, result.Duplicate)
+	require.Empty(t, result.Grants)
+	require.Equal(t, int64(0), result.State.XP())
 }
