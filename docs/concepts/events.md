@@ -36,7 +36,7 @@ Event identity is first-class.
 
 Event identity is scoped to a Project.
 
-A retry using the same Project + Event ID and the same logical payload is treated as an idempotent duplicate and resolves to the originally persisted Event. Reusing the same identity with different Player, type, occurrence time, or properties is rejected as an identity conflict.
+A retry using the same Project + Event ID and the same logical payload is treated as an idempotent duplicate and resolves to the originally persisted Event. Reusing the same identity with different Player, type, occurrence time, or properties is rejected as an identity conflict. Properties are normalized through JSON before identity comparison, and timestamps are normalized to PostgreSQL microsecond precision, so a database round-trip cannot turn an otherwise identical retry into a false conflict.
 
 Player ownership is validated within the Event's Project before persistence, and the database enforces the same Project/Player relationship.
 

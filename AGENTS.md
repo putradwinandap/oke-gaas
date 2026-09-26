@@ -392,7 +392,7 @@ Event identity supports:
 - reward tracing
 - abuse prevention
 
-Event identity is scoped to a Project. Reusing the same Project + Event identity with the same logical payload is an idempotent retry and returns the originally persisted Event. Reusing that identity with different logical event data is rejected as an identity conflict.
+Event identity is scoped to a Project. Reusing the same Project + Event identity with the same logical payload is an idempotent retry and returns the originally persisted Event. Reusing that identity with different logical event data is rejected as an identity conflict. Event properties are normalized through JSON before comparison so persistence round-trips do not change logical identity. Event timestamps are normalized to PostgreSQL microsecond precision before persistence and comparison.
 
 Player ownership must be verified within the Event's Project before persistence, and persistence must also enforce the Project/Player relationship.
 
