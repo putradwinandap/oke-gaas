@@ -27,6 +27,9 @@ func NewPlayerStateRepository(db *gorm.DB) *PlayerStateRepository {
 }
 
 func (r *PlayerStateRepository) Ensure(ctx context.Context, projectID, playerID string, updatedAt time.Time) (*progression.State, error) {
+	if updatedAt.IsZero() {
+		return nil, progression.ErrInvalidUpdatedAt
+	}
 	record := playerStateRecord{
 		ProjectID: projectID,
 		PlayerID:  playerID,
@@ -47,6 +50,9 @@ func (r *PlayerStateRepository) Ensure(ctx context.Context, projectID, playerID 
 func (r *PlayerStateRepository) AddXP(ctx context.Context, projectID, playerID string, amount int64, updatedAt time.Time) (*progression.State, error) {
 	if amount <= 0 {
 		return nil, progression.ErrInvalidXPIncrease
+	}
+	if updatedAt.IsZero() {
+		return nil, progression.ErrInvalidUpdatedAt
 	}
 
 	var record playerStateRecord
