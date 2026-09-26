@@ -16,10 +16,13 @@ CREATE INDEX idx_player_states_project_xp
 
 INSERT INTO player_states (project_id, player_id, xp, updated_at)
 SELECT
-    project_id,
-    player_id,
-    SUM(amount) AS xp,
-    MAX(created_at) AS updated_at
-FROM reward_grants
-WHERE reward_type = 'xp'
-GROUP BY project_id, player_id;
+    p.project_id,
+    p.id,
+    COALESCE(SUM(r.amount), 0) AS xp,
+    COALESCE(MAX(r.created_at), p.created_at) AS updated_at
+FROM players p
+LEFT JOIN reward_grants r
+    ON r.project_id = p.project_id
+   AND r.player_id = p.id
+   AND r.reward_type = 'xp'
+GROUP BY p.project_id, p.id, p.created_at;
