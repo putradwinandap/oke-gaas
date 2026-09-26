@@ -37,6 +37,8 @@ Health check:
 GET /health
 ```
 
+Apply the ordered SQL migrations under `migrations/` before starting the API against a fresh database. The currently implemented REST surface is documented in `docs/api/openapi.yaml`.
+
 ### Configuration
 
 Copy `.env.example` as a reference for supported environment variables.

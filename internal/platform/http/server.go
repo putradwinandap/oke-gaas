@@ -155,14 +155,18 @@ func New(dependencies ...Dependencies) *fiber.App {
 		})
 		if err != nil {
 			switch {
-			case errors.Is(err, eventdomain.ErrInvalidID),
-				errors.Is(err, eventdomain.ErrInvalidPlayerID),
-				errors.Is(err, eventdomain.ErrInvalidType),
-				errors.Is(err, eventdomain.ErrInvalidOccurredAt),
-				errors.Is(err, eventdomain.ErrInvalidProperties):
-				return writeError(c, fiber.StatusBadRequest, "invalid_event", err.Error())
+			case errors.Is(err, eventdomain.ErrInvalidID):
+				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidID.Error())
+			case errors.Is(err, eventdomain.ErrInvalidPlayerID):
+				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidPlayerID.Error())
+			case errors.Is(err, eventdomain.ErrInvalidType):
+				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidType.Error())
+			case errors.Is(err, eventdomain.ErrInvalidOccurredAt):
+				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidOccurredAt.Error())
+			case errors.Is(err, eventdomain.ErrInvalidProperties):
+				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidProperties.Error())
 			case errors.Is(err, eventdomain.ErrIdentityConflict):
-				return writeError(c, fiber.StatusConflict, "event_identity_conflict", err.Error())
+				return writeError(c, fiber.StatusConflict, "event_identity_conflict", eventdomain.ErrIdentityConflict.Error())
 			case errors.Is(err, eventdomain.ErrPlayerNotInProject):
 				return writeError(c, fiber.StatusNotFound, "player_not_found", "player not found in project")
 			default:
@@ -262,12 +266,11 @@ func validBearer(header, expected string) bool {
 }
 
 func bearer(header string) (string, bool) {
-	const prefix = "Bearer "
-	if !strings.HasPrefix(header, prefix) {
+	parts := strings.Fields(header)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return "", false
 	}
-	secret := strings.TrimSpace(strings.TrimPrefix(header, prefix))
-	return secret, secret != ""
+	return parts[1], true
 }
 
 func writeError(c fiber.Ctx, status int, code, message string) error {

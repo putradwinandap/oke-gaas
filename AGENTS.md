@@ -129,6 +129,7 @@ Prefer explicit interfaces, application services, or domain/application events b
 Current concrete module layout:
 
 ```text
+internal/access/             Project API-key authentication boundary + repository interface
 internal/project/            Project domain + application service + repository interface
 internal/player/             Player domain + application service + repository interface
 internal/event/              External Event domain + idempotent ingestion service + repository interface

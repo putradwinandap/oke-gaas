@@ -12,7 +12,6 @@ import (
 
 var (
 	ErrInvalidProjectID = errors.New("project api key project id is required")
-	ErrInvalidSecret    = errors.New("project api key is required")
 	ErrNotFound         = errors.New("project api key not found")
 	ErrUnauthorized     = errors.New("invalid project api key")
 )

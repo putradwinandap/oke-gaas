@@ -167,6 +167,20 @@ func TestRESTVerticalSliceProcessesDuplicateEventExactlyOnce(t *testing.T) {
 	duplicateState := duplicate["state"].(map[string]any)
 	require.Equal(t, float64(100), duplicateState["xp"])
 
+	conflictBody := map[string]any{
+		"event_id":    "evt_lesson_1",
+		"player_id":   playerID,
+		"type":        "lesson_completed",
+		"occurred_at": eventBody["occurred_at"],
+		"properties":  map[string]any{"lesson_id": "lesson_6"},
+	}
+	resp, conflict := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, conflictBody,
+	)
+	require.Equal(t, http.StatusConflict, resp.StatusCode)
+	conflictError := conflict["error"].(map[string]any)
+	require.Equal(t, "event_identity_conflict", conflictError["code"])
+
 	resp, state := requestJSON(t, app, http.MethodGet,
 		fmt.Sprintf("/v1/projects/%s/players/%s/state", projectID, playerID), apiKey, nil,
 	)
@@ -188,4 +202,32 @@ func TestProjectAPIKeyCannotCrossTenantBoundary(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	errorBody := body["error"].(map[string]any)
 	require.Equal(t, "unauthorized", errorBody["code"])
+}
+
+
+func TestProjectCannotUseAnotherProjectsPlayer(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+
+	firstProjectID, firstKey := createProjectViaAPI(t, app, "First")
+	resp, firstPlayer := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/players", firstProjectID), firstKey,
+		map[string]any{"external_id": "student-a"},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	firstPlayerID := firstPlayer["id"].(string)
+
+	secondProjectID, secondKey := createProjectViaAPI(t, app, "Second")
+	resp, body := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", secondProjectID), secondKey,
+		map[string]any{
+			"event_id":    "evt_cross_tenant",
+			"player_id":   firstPlayerID,
+			"type":        "lesson_completed",
+			"occurred_at": time.Now().UTC().Format(time.RFC3339Nano),
+		},
+	)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	errorBody := body["error"].(map[string]any)
+	require.Equal(t, "player_not_found", errorBody["code"])
 }
