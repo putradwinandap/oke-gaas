@@ -16,6 +16,7 @@ Engineering rules and architectural constraints live in [AGENTS.md](./AGENTS.md)
 
 - Go 1.26+
 - PostgreSQL for persistence-backed features
+- Node.js 22+ when developing the TypeScript SDK
 
 ### Run the API
 
@@ -49,12 +50,22 @@ Current baseline:
 - `DATABASE_URL` — PostgreSQL connection string used by the API server.
 - `OKE_GAAS_ADMIN_API_KEY` — operator bearer secret used only to create Projects; use at least 32 random characters.
 
+### TypeScript SDK
+
+The initial Project-scoped SDK lives under `sdk/typescript/`. It is intentionally thin and intended for trusted server-side or controlled runtimes because Project API keys are secrets.
+
+See [the TypeScript SDK guide](./docs/sdk/typescript.md) and [the complete MVP example](./examples/typescript-mvp/README.md).
+
 ### Quality checks
 
 ```bash
 gofmt -w .
 go vet ./...
 go test ./...
+
+cd sdk/typescript
+npm install
+npm run check
 ```
 
 Pull-request CI is gated by the `ci-ready` label after manual review. Pushes to `main` remain a final repository-health validation.
