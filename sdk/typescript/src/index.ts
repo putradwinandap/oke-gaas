@@ -333,7 +333,7 @@ export function createGaas(config: GaasConfig): GaasClient {
 }
 
 function requireNonEmpty(value: string, name: string): string {
-  if (value.trim() === "") {
+  if (typeof value !== "string" || value.trim() === "") {
     throw new TypeError(`${name} must not be empty`);
   }
   return value;
@@ -354,6 +354,10 @@ function normalizeTimeoutMs(value: number): number {
 }
 
 function normalizeBaseUrl(value: string): string {
+  if (typeof value !== "string") {
+    throw new TypeError("baseUrl must be a valid absolute URL");
+  }
+
   let url: URL;
   try {
     url = new URL(value);
