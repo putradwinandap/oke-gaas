@@ -274,8 +274,19 @@ func TestAutoMigrateDevelopmentEnforcesEventPlayerProjectIsolation(t *testing.T)
 	)
 	require.NoError(t, err)
 	require.Error(t, events.Save(ctx, invalidOwnership))
-}
 
+	missingProject, err := eventdomain.New(
+		"evt_missing_project",
+		"proj_missing",
+		playerA.ID(),
+		"lesson_completed",
+		time.Now(),
+		time.Now(),
+		nil,
+	)
+	require.NoError(t, err)
+	require.Error(t, events.Save(ctx, missingProject))
+}
 
 func TestAutoMigrateDevelopmentIgnoresSameNamedConstraintOnAnotherTable(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
