@@ -1,0 +1,137 @@
+openapi: 3.1.0
+info:
+  title: Oke Gaas API
+  version: 0.1.0
+  description: |
+    Initial unstable REST API for the first complete Oke Gaas vertical slice.
+    Public compatibility is not yet guaranteed.
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      responses:
+        "200":
+          description: Healthy process
+  /v1/projects:
+    post:
+      summary: Create a Project and return its API key once
+      security:
+        - AdminBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201": { description: Project created }
+        "401": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/players:
+    post:
+      summary: Register a Player
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [external_id]
+              properties:
+                external_id: { type: string }
+      responses:
+        "201": { description: Player registered }
+        "401": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/rules:
+    post:
+      summary: Create a version-1 exact-event XP rule
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_type, xp]
+              properties:
+                event_type: { type: string }
+                xp: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "201": { description: Rule created }
+  /v1/projects/{projectId}/events:
+    post:
+      summary: Process one idempotent external Event
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id, player_id, type, occurred_at]
+              properties:
+                event_id: { type: string, description: Stable caller-supplied identity scoped to the Project }
+                player_id: { type: string }
+                type: { type: string }
+                occurred_at: { type: string, format: date-time }
+                properties:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201": { description: Event accepted and processed }
+        "200": { description: Identical retry returned without duplicate rewards }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/players/{playerId}/state:
+    get:
+      summary: Retrieve current Player XP
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: playerId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Current Player State }
+        "404": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    AdminBearer:
+      type: http
+      scheme: bearer
+      description: Server operator key configured with OKE_GAAS_ADMIN_API_KEY.
+    ProjectBearer:
+      type: http
+      scheme: bearer
+      description: Per-Project API key returned once at Project creation.
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Consistent API error envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code: { type: string }
+                  message: { type: string }
