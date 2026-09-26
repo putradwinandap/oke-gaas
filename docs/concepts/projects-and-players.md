@@ -20,6 +20,8 @@ Examples include:
 
 Tenant isolation must be enforced by implementation and covered by automated tests.
 
+Project identity is generated internally. Application services and repositories must not infer tenant ownership from a Player identifier alone.
+
 ## Player
 
 A Player is the gamified end user.
@@ -37,6 +39,10 @@ Use **Player** consistently for the person/entity receiving:
 Do not use `User` as a synonym for Player.
 
 Reserve `User` for future Oke Gaas account users such as administrators, operators, or dashboard members.
+
+Each Player belongs to exactly one Project. The integrating application supplies a Player `external_id`; that identifier is unique only within its owning Project, so two Projects may legitimately use the same `external_id`.
+
+Player reads must always be scoped by `project_id`. Persistence adapters enforce this by querying with both the Project scope and Player identifier.
 
 ## Player State
 
