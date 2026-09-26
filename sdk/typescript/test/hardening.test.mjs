@@ -176,3 +176,21 @@ test("baseUrl path prefixes remain supported for reverse proxies", async () => {
     assert.equal(state.xp, 42);
   });
 });
+
+
+test("successful responses must remain bound to the requested project and player", async () => {
+  await withServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      project_id: "proj_other",
+      player_id: "player_123",
+      xp: 10,
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId: "proj_test", apiKey: "secret", baseUrl });
+    await assert.rejects(
+      () => gaas.players.get("player_123"),
+      assertGaasError("invalid_response", 200),
+    );
+  });
+});
