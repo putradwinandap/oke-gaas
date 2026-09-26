@@ -60,6 +60,7 @@ func ensureDevelopmentForeignKey(db *gorm.DB, tableName, constraintName, stateme
 			FROM pg_constraint
 			WHERE conname = ?
 			  AND conrelid = ?::regclass
+			  AND contype = 'f'
 		)
 	`, constraintName, tableName).Scan(&exists).Error; err != nil {
 		return fmt.Errorf("check constraint %s on %s: %w", constraintName, tableName, err)
