@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -54,7 +55,7 @@ func New(id, projectID, playerID, eventType string, occurredAt, receivedAt time.
 	if id == "" {
 		return nil, ErrInvalidID
 	}
-	if len(id) > 255 {
+	if utf8.RuneCountInString(id) > 255 {
 		return nil, ErrIDTooLong
 	}
 	projectID = strings.TrimSpace(projectID)
@@ -69,7 +70,7 @@ func New(id, projectID, playerID, eventType string, occurredAt, receivedAt time.
 	if eventType == "" {
 		return nil, ErrInvalidType
 	}
-	if len(eventType) > 255 {
+	if utf8.RuneCountInString(eventType) > 255 {
 		return nil, ErrTypeTooLong
 	}
 	if occurredAt.IsZero() {
