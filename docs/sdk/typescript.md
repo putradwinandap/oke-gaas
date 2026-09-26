@@ -40,7 +40,7 @@ Each request has a 15-second client timeout by default. `GaasConfig.timeoutMs` m
 
 Fetch failures and failures while reading the response body are normalized as `GaasError`. Timeout and caller cancellation use distinct `timeout_error` and `request_aborted` codes.
 
-Successful JSON responses are validated at runtime instead of being trusted through TypeScript assertions alone. Numeric XP, rule versions, and reward amounts must be JavaScript safe integers; responses outside that range are rejected as `invalid_response` rather than silently losing precision.
+Successful JSON responses are validated at runtime instead of being trusted through TypeScript assertions alone. Response identifiers must remain bound to the requested Project, Player, Event, or Rule inputs where applicable. Numeric XP, rule versions, and reward amounts must be JavaScript safe integers; responses outside that range are rejected as `invalid_response` rather than silently losing precision.
 
 Base URLs must use HTTP(S) and must not contain embedded credentials, query strings, or fragments. A path prefix remains allowed for reverse-proxy deployments.
 
