@@ -289,7 +289,7 @@ SDKs are integration clients.
 
 They should make Oke Gaas easy to consume without duplicating business logic that belongs in Core or the Server.
 
-The initial JavaScript/TypeScript SDK lives under `sdk/typescript/` and is Project-scoped. It may handle transport concerns such as bearer authentication, request construction, transport-field mapping, safe API-error normalization, and convenience event-ID generation. It must not evaluate Rules, calculate Rewards/XP, reproduce tenant authorization, infer Player State locally, or replace server transaction/idempotency semantics.
+The initial JavaScript/TypeScript SDK lives under `sdk/typescript/` and is Project-scoped. It may handle transport concerns such as bearer authentication, request construction, transport-field mapping, runtime response validation, finite client deadlines, caller cancellation, safe API-error normalization, and convenience event-ID generation. It must not evaluate Rules, calculate Rewards/XP, reproduce tenant authorization, infer Player State locally, or replace server transaction/idempotency semantics. Public numeric values mapped to JavaScript `number` must be rejected when they fall outside the safe-integer range rather than silently losing precision.
 
 Project API keys are secrets. The initial SDK is intended for trusted server-side or otherwise controlled runtimes and must not encourage embedding Project API keys in public browser bundles. Project provisioning remains an operator/admin concern and must not be mixed into the normal Project-key SDK client.
 
