@@ -191,7 +191,6 @@ func TestEventRepositoryPersistsIdempotentIdentityAndEnforcesPlayerOwnership(t *
 	require.Error(t, events.Save(ctx, invalidOwnership))
 }
 
-
 func TestEventServiceIdempotencySurvivesPostgresRoundTrip(t *testing.T) {
 	db := openIntegrationDatabase(t)
 	projects := NewProjectRepository(db)
@@ -209,14 +208,14 @@ func TestEventServiceIdempotencySurvivesPostgresRoundTrip(t *testing.T) {
 
 	service := eventdomain.NewService(players, events)
 	command := eventdomain.IngestCommand{
-		ID: "evt_round_trip",
-		ProjectID: owningProject.ID(),
-		PlayerID: target.ID(),
-		Type: "lesson_completed",
+		ID:         "evt_round_trip",
+		ProjectID:  owningProject.ID(),
+		PlayerID:   target.ID(),
+		Type:       "lesson_completed",
 		OccurredAt: time.Date(2026, 9, 26, 8, 0, 0, 123456789, time.UTC),
 		Properties: map[string]any{
-			"score": 100,
-			"tags": []string{"go", "ddd"},
+			"score":  100,
+			"tags":   []string{"go", "ddd"},
 			"nested": map[string]any{"attempt": 2},
 		},
 	}
