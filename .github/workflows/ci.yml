@@ -23,8 +23,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Download dependencies
-        run: go mod download
+      - name: Prepare module metadata
+        run: |
+          go mod tidy
+          echo "----- go.mod -----"
+          cat go.mod
+          echo "----- go.sum -----"
+          cat go.sum
+          echo "----- end module metadata -----"
 
       - name: Check formatting
         run: |
