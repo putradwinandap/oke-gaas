@@ -5,3 +5,5 @@ coverage.out
 .DS_Store
 .idea/
 .vscode/
+sdk/typescript/node_modules/
+sdk/typescript/dist/
