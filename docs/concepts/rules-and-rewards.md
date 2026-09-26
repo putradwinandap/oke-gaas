@@ -69,7 +69,7 @@ Do not represent reward history only as mutation of current player state.
 
 ## Player State
 
-Player State is the current materialized result of processed rewards.
+Player State is the current materialized result of processed rewards. The initial implementation stores Project-scoped XP in `player_states`, updates it in the same transaction as Reward Grants, and uses a transaction-scoped `event_processing` claim to distinguish Event identity from completed processing. A committed duplicate Event retry reads the already-persisted outcome rather than applying XP again; a failed transaction rolls the claim back so a retry can process safely.
 
 The desired relationship is:
 

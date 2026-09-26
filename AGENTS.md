@@ -134,7 +134,8 @@ internal/player/             Player domain + application service + repository in
 internal/event/              External Event domain + idempotent ingestion service + repository interface
 internal/rule/               Versioned exact-event XP Rule domain + repository interface
 internal/reward/             Auditable XP Reward Grant domain + evaluation service + repository interface
-internal/platform/database/  GORM/PostgreSQL records, queries, and migrations
+internal/progression/          Materialized Player State + transactional Event -> Reward -> State orchestration
+internal/platform/database/  GORM/PostgreSQL records, queries, transactions, and migrations
 ```
 
 Repository interfaces belong at the domain/application consumer boundary. GORM record types and query construction belong in infrastructure.
@@ -396,7 +397,7 @@ Event identity supports:
 
 Event identity is scoped to a Project. Reusing the same Project + Event identity with the same logical payload is an idempotent retry and returns the originally persisted Event. Reusing that identity with different logical event data is rejected as an identity conflict. Event properties are normalized through JSON before comparison; JSON numbers are compared by exact numeric value so PostgreSQL `jsonb` representation changes do not create false conflicts. Event timestamps are normalized to PostgreSQL microsecond precision before persistence and comparison.
 
-Player ownership must be verified within the Event's Project before persistence, and persistence must also enforce the Project/Player relationship. Duplicate detection must not abort an enclosing PostgreSQL transaction; persistence should use conflict-safe insertion or an equivalent transaction-safe mechanism.
+Player ownership must be verified within the Event's Project before persistence, and persistence must also enforce the Project/Player relationship. Duplicate detection must not abort an enclosing PostgreSQL transaction; persistence should use conflict-safe insertion or an equivalent transaction-safe mechanism. Event identity and processing completion are separate concerns: `event_processing` records a transaction-scoped processing claim/completion so retries can distinguish an already-settled Event from an Event merely present in storage. The claim must commit or roll back with Reward Grants and Player State.
 
 The exact public API shape is not yet permanently locked, but implementation must preserve these semantics.
 
@@ -473,7 +474,7 @@ Reward Grant
 Player State
 ```
 
-`Player State` is a current materialized representation for efficient reads.
+`Player State` is a current materialized representation for efficient reads. The initial concrete state stores Project-scoped Player XP in `player_states` and is updated atomically with Reward Grants inside the same PostgreSQL transaction. Player State is derived/materialized data; Reward Grants remain the auditable historical source for why XP changed.
 
 Reward history provides auditability.
 

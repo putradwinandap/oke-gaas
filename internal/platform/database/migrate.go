@@ -16,6 +16,8 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&eventRecord{},
 		&ruleRecord{},
 		&rewardGrantRecord{},
+		&playerStateRecord{},
+		&eventProcessingRecord{},
 	); err != nil {
 		return fmt.Errorf("auto-migrate core development schema: %w", err)
 	}
@@ -98,6 +100,30 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 			`,
 		},
 		{
+			table: "player_states",
+			name:  "fk_player_states_player_project",
+			statement: `
+				ALTER TABLE player_states
+				ADD CONSTRAINT fk_player_states_player_project
+				FOREIGN KEY (project_id, player_id)
+				REFERENCES players(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "event_processing",
+			name:  "fk_event_processing_event",
+			statement: `
+				ALTER TABLE event_processing
+				ADD CONSTRAINT fk_event_processing_event
+				FOREIGN KEY (project_id, event_id)
+				REFERENCES events(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
 			table: "reward_grants",
 			name:  "fk_reward_grants_rule_version",
 			statement: `
@@ -109,6 +135,33 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 				ON DELETE RESTRICT
 			`,
 		},
+	}
+
+	if err := db.Exec(`
+		INSERT INTO player_states (project_id, player_id, xp, updated_at)
+		SELECT
+			p.project_id,
+			p.id,
+			COALESCE(SUM(r.amount), 0),
+			COALESCE(MAX(r.created_at), p.created_at)
+		FROM players p
+		LEFT JOIN reward_grants r
+			ON r.project_id = p.project_id
+		   AND r.player_id = p.id
+		   AND r.reward_type = 'xp'
+		GROUP BY p.project_id, p.id, p.created_at
+		ON CONFLICT (project_id, player_id) DO NOTHING
+	`).Error; err != nil {
+		return fmt.Errorf("backfill development player state: %w", err)
+	}
+
+	if err := db.Exec(`
+		INSERT INTO event_processing (project_id, event_id, processed_at)
+		SELECT project_id, id, received_at
+		FROM events
+		ON CONFLICT (project_id, event_id) DO NOTHING
+	`).Error; err != nil {
+		return fmt.Errorf("backfill development event processing: %w", err)
 	}
 
 	for _, constraint := range constraints {
