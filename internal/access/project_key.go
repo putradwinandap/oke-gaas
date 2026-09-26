@@ -81,6 +81,9 @@ func NewService(repository Repository) *Service {
 }
 
 func (s *Service) Authenticate(ctx context.Context, projectID, secret string) error {
+	if s == nil || s.repository == nil {
+		return errors.New("project api key repository is required")
+	}
 	if strings.TrimSpace(secret) == "" {
 		return ErrUnauthorized
 	}

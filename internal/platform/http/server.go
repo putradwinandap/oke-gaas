@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
@@ -15,6 +16,8 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/project"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
 )
+
+const requestOperationTimeout = 10 * time.Second
 
 type Dependencies struct {
 	Projects  *project.ProvisionService
@@ -40,6 +43,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 	deps := dependencies[0]
 
 	app.Post("/v1/projects", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
 		if !validBearer(c.Get("Authorization"), deps.AdminKey) {
 			return writeError(c, fiber.StatusUnauthorized, "unauthorized", "invalid admin api key")
 		}
@@ -49,7 +54,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 		if err := c.Bind().Body(&request); err != nil {
 			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
 		}
-		result, err := deps.Projects.Provision(c, request.Name)
+		result, err := deps.Projects.Provision(ctx, request.Name)
 		if err != nil {
 			if errors.Is(err, project.ErrInvalidName) {
 				return writeError(c, fiber.StatusBadRequest, "invalid_project_name", err.Error())
@@ -67,8 +72,10 @@ func New(dependencies ...Dependencies) *fiber.App {
 	})
 
 	app.Post("/v1/projects/:projectId/players", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
 		projectID := c.Params("projectId")
-		if err := authenticateProject(c, deps.Access, projectID); err != nil {
+		if err := authenticateProject(ctx, c, deps.Access, projectID); err != nil {
 			return err
 		}
 		var request struct {
@@ -77,7 +84,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 		if err := c.Bind().Body(&request); err != nil {
 			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
 		}
-		value, err := deps.Players.Register(c, projectID, request.ExternalID)
+		value, err := deps.Players.Register(ctx, projectID, request.ExternalID)
 		if err != nil {
 			switch {
 			case errors.Is(err, player.ErrInvalidExternalID):
@@ -99,8 +106,10 @@ func New(dependencies ...Dependencies) *fiber.App {
 	})
 
 	app.Post("/v1/projects/:projectId/rules", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
 		projectID := c.Params("projectId")
-		if err := authenticateProject(c, deps.Access, projectID); err != nil {
+		if err := authenticateProject(ctx, c, deps.Access, projectID); err != nil {
 			return err
 		}
 		var request struct {
@@ -110,7 +119,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 		if err := c.Bind().Body(&request); err != nil {
 			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
 		}
-		value, err := deps.Rules.CreateExactXP(c, projectID, request.EventType, request.XP)
+		value, err := deps.Rules.CreateExactXP(ctx, projectID, request.EventType, request.XP)
 		if err != nil {
 			switch {
 			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrInvalidXPAmount):
@@ -131,8 +140,10 @@ func New(dependencies ...Dependencies) *fiber.App {
 	})
 
 	app.Post("/v1/projects/:projectId/events", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
 		projectID := c.Params("projectId")
-		if err := authenticateProject(c, deps.Access, projectID); err != nil {
+		if err := authenticateProject(ctx, c, deps.Access, projectID); err != nil {
 			return err
 		}
 		var request struct {
@@ -145,7 +156,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 		if err := c.Bind().Body(&request); err != nil {
 			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
 		}
-		result, err := deps.Progress.Process(c, eventdomain.IngestCommand{
+		result, err := deps.Progress.Process(ctx, eventdomain.IngestCommand{
 			ID:         request.EventID,
 			ProjectID:  projectID,
 			PlayerID:   request.PlayerID,
@@ -201,18 +212,20 @@ func New(dependencies ...Dependencies) *fiber.App {
 	})
 
 	app.Get("/v1/projects/:projectId/players/:playerId/state", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
 		projectID := c.Params("projectId")
-		if err := authenticateProject(c, deps.Access, projectID); err != nil {
+		if err := authenticateProject(ctx, c, deps.Access, projectID); err != nil {
 			return err
 		}
 		playerID := c.Params("playerId")
-		if _, err := deps.Players.Get(c, projectID, playerID); err != nil {
+		if _, err := deps.Players.Get(ctx, projectID, playerID); err != nil {
 			if errors.Is(err, player.ErrNotFound) {
 				return writeError(c, fiber.StatusNotFound, "player_not_found", "player not found")
 			}
 			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not load player")
 		}
-		state, err := deps.States.Get(c, projectID, playerID)
+		state, err := deps.States.Get(ctx, projectID, playerID)
 		if err != nil {
 			if errors.Is(err, progression.ErrStateNotFound) {
 				return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -238,7 +251,11 @@ func New(dependencies ...Dependencies) *fiber.App {
 	return app
 }
 
-func authenticateProject(c fiber.Ctx, service *access.Service, projectID string) error {
+func requestContext(c fiber.Ctx) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(c.Context(), requestOperationTimeout)
+}
+
+func authenticateProject(ctx context.Context, c fiber.Ctx, service *access.Service, projectID string) error {
 	if service == nil {
 		return writeError(c, fiber.StatusInternalServerError, "internal_error", "project authentication is unavailable")
 	}
@@ -246,7 +263,7 @@ func authenticateProject(c fiber.Ctx, service *access.Service, projectID string)
 	if !ok {
 		return writeError(c, fiber.StatusUnauthorized, "unauthorized", "project api key is required")
 	}
-	if err := service.Authenticate(c, projectID, secret); err != nil {
+	if err := service.Authenticate(ctx, projectID, secret); err != nil {
 		if errors.Is(err, access.ErrUnauthorized) {
 			return writeError(c, fiber.StatusUnauthorized, "unauthorized", "invalid project api key")
 		}

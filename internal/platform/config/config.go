@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 const defaultHTTPAddr = ":8080"
 
@@ -21,6 +24,6 @@ func Load() Config {
 	return Config{
 		HTTPAddr:    httpAddr,
 		DatabaseURL: os.Getenv("DATABASE_URL"),
-		AdminAPIKey: os.Getenv("OKE_GAAS_ADMIN_API_KEY"),
+		AdminAPIKey: strings.TrimSpace(os.Getenv("OKE_GAAS_ADMIN_API_KEY")),
 	}
 }

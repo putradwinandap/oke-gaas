@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/putradwinandap/oke-gaas/internal/access"
 	"github.com/putradwinandap/oke-gaas/internal/platform/config"
@@ -16,8 +19,8 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if len(cfg.AdminAPIKey) < 32 {
-		slog.Error("OKE_GAAS_ADMIN_API_KEY must be at least 32 characters")
+	if len(cfg.AdminAPIKey) < 32 || strings.IndexFunc(cfg.AdminAPIKey, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }) >= 0 {
+		slog.Error("OKE_GAAS_ADMIN_API_KEY must be at least 32 non-whitespace-separated characters")
 		os.Exit(1)
 	}
 
@@ -32,6 +35,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer sqlDB.Close()
+
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelPing()
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		slog.Error("ping database", "error", err)
+		os.Exit(1)
+	}
 
 	projects := database.NewProjectRepository(db)
 	players := database.NewPlayerRepository(db)

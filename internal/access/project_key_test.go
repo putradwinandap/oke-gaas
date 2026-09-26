@@ -48,3 +48,13 @@ func TestGenerateProjectKeyRequiresProject(t *testing.T) {
 	require.Nil(t, key)
 	require.Empty(t, secret)
 }
+
+
+func TestServiceAuthenticateRejectsMissingRepositoryWithoutPanic(t *testing.T) {
+	service := NewService(nil)
+
+	err := service.Authenticate(context.Background(), "proj_1", "gaas_secret")
+
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrUnauthorized)
+}
