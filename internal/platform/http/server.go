@@ -77,8 +77,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 		ctx, cancel := requestContext(c)
 		defer cancel()
 		projectID := c.Params("projectId")
-		if err := authenticateProject(ctx, c, deps.Access, projectID); err != nil {
-			return err
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
 		}
 		var request struct {
 			ExternalID string `json:"external_id"`
@@ -111,8 +111,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 		ctx, cancel := requestContext(c)
 		defer cancel()
 		projectID := c.Params("projectId")
-		if err := authenticateProject(ctx, c, deps.Access, projectID); err != nil {
-			return err
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
 		}
 		var request struct {
 			EventType string `json:"event_type"`
@@ -145,8 +145,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 		ctx, cancel := requestContext(c)
 		defer cancel()
 		projectID := c.Params("projectId")
-		if err := authenticateProject(ctx, c, deps.Access, projectID); err != nil {
-			return err
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
 		}
 		var request struct {
 			EventID    string         `json:"event_id"`
@@ -221,8 +221,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 		ctx, cancel := requestContext(c)
 		defer cancel()
 		projectID := c.Params("projectId")
-		if err := authenticateProject(ctx, c, deps.Access, projectID); err != nil {
-			return err
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
 		}
 		playerID := c.Params("playerId")
 		if _, err := deps.Players.Get(ctx, projectID, playerID); err != nil {
@@ -261,21 +261,25 @@ func requestContext(c fiber.Ctx) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(c.Context(), requestOperationTimeout)
 }
 
-func authenticateProject(ctx context.Context, c fiber.Ctx, service *access.Service, projectID string) error {
+func authenticateProject(ctx context.Context, c fiber.Ctx, service *access.Service, projectID string) bool {
 	if service == nil {
-		return writeError(c, fiber.StatusInternalServerError, "internal_error", "project authentication is unavailable")
+		_ = writeError(c, fiber.StatusInternalServerError, "internal_error", "project authentication is unavailable")
+		return false
 	}
 	secret, ok := bearer(c.Get("Authorization"))
 	if !ok {
-		return writeError(c, fiber.StatusUnauthorized, "unauthorized", "project api key is required")
+		_ = writeError(c, fiber.StatusUnauthorized, "unauthorized", "project api key is required")
+		return false
 	}
 	if err := service.Authenticate(ctx, projectID, secret); err != nil {
 		if errors.Is(err, access.ErrUnauthorized) {
-			return writeError(c, fiber.StatusUnauthorized, "unauthorized", "invalid project api key")
+			_ = writeError(c, fiber.StatusUnauthorized, "unauthorized", "invalid project api key")
+			return false
 		}
-		return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not authenticate project")
+		_ = writeError(c, fiber.StatusInternalServerError, "internal_error", "could not authenticate project")
+		return false
 	}
-	return nil
+	return true
 }
 
 func validBearer(header, expected string) bool {
