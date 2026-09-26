@@ -16,8 +16,8 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if cfg.AdminAPIKey == "" {
-		slog.Error("OKE_GAAS_ADMIN_API_KEY is required")
+	if len(cfg.AdminAPIKey) < 32 {
+		slog.Error("OKE_GAAS_ADMIN_API_KEY must be at least 32 characters")
 		os.Exit(1)
 	}
 
