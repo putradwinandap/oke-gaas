@@ -12,6 +12,7 @@ import (
 func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&projectRecord{},
+		&projectAPIKeyRecord{},
 		&playerRecord{},
 		&eventRecord{},
 		&ruleRecord{},
