@@ -16,6 +16,7 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&eventRecord{},
 		&ruleRecord{},
 		&rewardGrantRecord{},
+		&playerStateRecord{},
 	); err != nil {
 		return fmt.Errorf("auto-migrate core development schema: %w", err)
 	}
@@ -91,6 +92,18 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 			statement: `
 				ALTER TABLE reward_grants
 				ADD CONSTRAINT fk_reward_grants_player_project
+				FOREIGN KEY (project_id, player_id)
+				REFERENCES players(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "player_states",
+			name:  "fk_player_states_player_project",
+			statement: `
+				ALTER TABLE player_states
+				ADD CONSTRAINT fk_player_states_player_project
 				FOREIGN KEY (project_id, player_id)
 				REFERENCES players(project_id, id)
 				ON UPDATE RESTRICT
