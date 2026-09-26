@@ -14,5 +14,5 @@ func OpenPostgres(dsn string) (*gorm.DB, error) {
 		return nil, errors.New("database URL is required")
 	}
 
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
 }

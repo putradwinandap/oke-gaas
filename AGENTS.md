@@ -126,6 +126,16 @@ Do not bypass module boundaries by directly reaching into another module's persi
 
 Prefer explicit interfaces, application services, or domain/application events between boundaries.
 
+Current concrete module layout:
+
+```text
+internal/project/            Project domain + application service + repository interface
+internal/player/             Player domain + application service + repository interface
+internal/platform/database/  GORM/PostgreSQL records, queries, and migrations
+```
+
+Repository interfaces belong at the domain/application consumer boundary. GORM record types and query construction belong in infrastructure.
+
 ---
 
 ## 4. Initial Technology Stack
@@ -294,6 +304,8 @@ This includes, where applicable:
 - webhooks
 
 Do not rely solely on caller-provided identifiers without enforcing project ownership.
+
+Player repositories and application behavior must require Project scope for Player lookup. A Player external identifier is unique within a Project, not globally.
 
 Tenant isolation must be covered by automated tests when persistence and authorization are implemented.
 
