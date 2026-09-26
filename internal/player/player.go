@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/putradwinandap/oke-gaas/internal/shared/identity"
 )
@@ -40,7 +41,7 @@ func New(projectID, externalID string, createdAt time.Time) (*Player, error) {
 	if externalID == "" {
 		return nil, ErrInvalidExternalID
 	}
-	if len(externalID) > 255 {
+	if utf8.RuneCountInString(externalID) > 255 {
 		return nil, ErrExternalIDTooLong
 	}
 
@@ -69,7 +70,7 @@ func Restore(id, projectID, externalID string, createdAt time.Time) (*Player, er
 	if externalID == "" {
 		return nil, ErrInvalidExternalID
 	}
-	if len(externalID) > 255 {
+	if utf8.RuneCountInString(externalID) > 255 {
 		return nil, ErrExternalIDTooLong
 	}
 
