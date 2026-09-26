@@ -131,6 +131,7 @@ Current concrete module layout:
 ```text
 internal/project/            Project domain + application service + repository interface
 internal/player/             Player domain + application service + repository interface
+internal/event/              External Event domain + idempotent ingestion service + repository interface
 internal/platform/database/  GORM/PostgreSQL records, queries, and migrations
 ```
 
@@ -390,6 +391,10 @@ Event identity supports:
 - auditability
 - reward tracing
 - abuse prevention
+
+Event identity is scoped to a Project. Reusing the same Project + Event identity with the same logical payload is an idempotent retry and returns the originally persisted Event. Reusing that identity with different logical event data is rejected as an identity conflict. Event properties are normalized through JSON before comparison; JSON numbers are compared by exact numeric value so PostgreSQL `jsonb` representation changes do not create false conflicts. Event timestamps are normalized to PostgreSQL microsecond precision before persistence and comparison.
+
+Player ownership must be verified within the Event's Project before persistence, and persistence must also enforce the Project/Player relationship. Duplicate detection must not abort an enclosing PostgreSQL transaction; persistence should use conflict-safe insertion or an equivalent transaction-safe mechanism.
 
 The exact public API shape is not yet permanently locked, but implementation must preserve these semantics.
 

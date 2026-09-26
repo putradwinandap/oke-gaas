@@ -34,6 +34,12 @@ The server may add metadata such as `received_at`.
 
 Event identity is first-class.
 
+Event identity is scoped to a Project.
+
+A retry using the same Project + Event ID and the same logical payload is treated as an idempotent duplicate and resolves to the originally persisted Event. Reusing the same identity with different Player, type, occurrence time, or properties is rejected as an identity conflict. Properties are normalized through JSON before identity comparison. JSON numbers are compared by exact numeric value, so PostgreSQL `jsonb` normalization such as `1e2` to `100` does not turn an identical retry into a false conflict. Timestamps are normalized to PostgreSQL microsecond precision.
+
+Player ownership is validated within the Event's Project before persistence, and the database enforces the same Project/Player relationship.
+
 Retries must not grant the same logical reward twice.
 
 Idempotency is part of the initial vertical slice, not an optional later optimization.
