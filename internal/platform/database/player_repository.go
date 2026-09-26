@@ -11,10 +11,11 @@ import (
 )
 
 type playerRecord struct {
-	ID         string    `gorm:"type:varchar(64);primaryKey"`
-	ProjectID  string    `gorm:"type:varchar(64);not null;index;index:idx_players_project_external,unique"`
-	ExternalID string    `gorm:"type:varchar(255);not null;index:idx_players_project_external,unique"`
-	CreatedAt  time.Time `gorm:"not null"`
+	ID         string        `gorm:"type:varchar(64);primaryKey"`
+	ProjectID  string        `gorm:"type:varchar(64);not null;index;index:idx_players_project_external,unique"`
+	ExternalID string        `gorm:"type:varchar(255);not null;index:idx_players_project_external,unique"`
+	CreatedAt  time.Time     `gorm:"not null"`
+	Project    projectRecord `gorm:"foreignKey:ProjectID;references:ID;constraint:OnUpdate:RESTRICT,OnDelete:RESTRICT"`
 }
 
 func (playerRecord) TableName() string { return "players" }
@@ -38,7 +39,7 @@ func (r *PlayerRepository) Save(ctx context.Context, value *player.Player) error
 		CreatedAt:  value.CreatedAt(),
 	}
 
-	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
+	if err := r.db.WithContext(ctx).Omit("Project").Create(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return player.ErrExternalIDTaken
 		}
