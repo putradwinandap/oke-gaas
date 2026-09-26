@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/putradwinandap/oke-gaas/internal/shared/identity"
 )
@@ -14,6 +15,7 @@ var (
 	ErrNotFound = errors.New("project not found")
 	// ErrInvalidName is returned when a project name is empty.
 	ErrInvalidName = errors.New("project name is required")
+	ErrNameTooLong = errors.New("project name must not exceed 255 characters")
 )
 
 // Project is the tenant and integration boundary for Oke Gaas data.
@@ -29,6 +31,9 @@ func New(name string, createdAt time.Time) (*Project, error) {
 	if name == "" {
 		return nil, ErrInvalidName
 	}
+	if utf8.RuneCountInString(name) > 255 {
+		return nil, ErrNameTooLong
+	}
 
 	id, err := identity.New("proj")
 	if err != nil {
@@ -43,8 +48,12 @@ func Restore(id, name string, createdAt time.Time) (*Project, error) {
 	if strings.TrimSpace(id) == "" {
 		return nil, errors.New("project id is required")
 	}
-	if strings.TrimSpace(name) == "" {
+	name = strings.TrimSpace(name)
+	if name == "" {
 		return nil, ErrInvalidName
+	}
+	if utf8.RuneCountInString(name) > 255 {
+		return nil, ErrNameTooLong
 	}
 
 	return &Project{id: id, name: name, createdAt: createdAt.UTC()}, nil

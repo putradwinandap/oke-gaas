@@ -32,7 +32,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	for _, table := range []string{"project_api_keys", "event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -317,7 +317,7 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	for _, table := range []string{"project_api_keys", "event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{

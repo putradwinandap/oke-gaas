@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/putradwinandap/oke-gaas/internal/shared/identity"
 )
@@ -16,6 +17,7 @@ var (
 	ErrInvalidProjectID = errors.New("project id is required")
 	// ErrInvalidExternalID is returned when a Player has no project-scoped external identifier.
 	ErrInvalidExternalID = errors.New("player external id is required")
+	ErrExternalIDTooLong = errors.New("player external id must not exceed 255 characters")
 	// ErrExternalIDTaken is returned when the same external identifier already exists in a Project.
 	ErrExternalIDTaken = errors.New("player external id already exists in project")
 )
@@ -39,6 +41,9 @@ func New(projectID, externalID string, createdAt time.Time) (*Player, error) {
 	if externalID == "" {
 		return nil, ErrInvalidExternalID
 	}
+	if utf8.RuneCountInString(externalID) > 255 {
+		return nil, ErrExternalIDTooLong
+	}
 
 	id, err := identity.New("player")
 	if err != nil {
@@ -61,8 +66,12 @@ func Restore(id, projectID, externalID string, createdAt time.Time) (*Player, er
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrInvalidProjectID
 	}
-	if strings.TrimSpace(externalID) == "" {
+	externalID = strings.TrimSpace(externalID)
+	if externalID == "" {
 		return nil, ErrInvalidExternalID
+	}
+	if utf8.RuneCountInString(externalID) > 255 {
+		return nil, ErrExternalIDTooLong
 	}
 
 	return &Player{

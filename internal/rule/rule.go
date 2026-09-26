@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/putradwinandap/oke-gaas/internal/event"
 )
@@ -13,6 +14,7 @@ var (
 	ErrInvalidProjectID = errors.New("project id is required")
 	ErrInvalidVersion   = errors.New("rule version must be greater than zero")
 	ErrInvalidEventType = errors.New("rule event type is required")
+	ErrEventTypeTooLong = errors.New("rule event type must not exceed 255 characters")
 	ErrInvalidXPAmount  = errors.New("rule xp amount must be greater than zero")
 	ErrAlreadyExists    = errors.New("rule version already exists")
 )
@@ -42,6 +44,9 @@ func New(id, projectID string, version uint64, eventType string, xpAmount int64)
 	eventType = strings.TrimSpace(eventType)
 	if eventType == "" {
 		return nil, ErrInvalidEventType
+	}
+	if utf8.RuneCountInString(eventType) > 255 {
+		return nil, ErrEventTypeTooLong
 	}
 	if xpAmount <= 0 {
 		return nil, ErrInvalidXPAmount

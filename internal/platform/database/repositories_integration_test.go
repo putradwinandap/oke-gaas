@@ -31,6 +31,7 @@ func openIntegrationDatabase(t *testing.T) *gorm.DB {
 		_ = sqlDB.Close()
 	})
 
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS project_api_keys CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS event_processing CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS player_states CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS reward_grants CASCADE").Error)
@@ -250,6 +251,7 @@ func TestAutoMigrateDevelopmentEnforcesEventPlayerProjectIsolation(t *testing.T)
 	db, err := OpenPostgres(dsn)
 	require.NoError(t, err)
 
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS project_api_keys CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS event_processing CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS player_states CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS reward_grants CASCADE").Error)
@@ -305,6 +307,7 @@ func TestAutoMigrateDevelopmentIgnoresSameNamedConstraintOnAnotherTable(t *testi
 	db, err := OpenPostgres(dsn)
 	require.NoError(t, err)
 
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS project_api_keys CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS event_processing CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS player_states CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS reward_grants CASCADE").Error)

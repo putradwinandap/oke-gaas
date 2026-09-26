@@ -7,17 +7,20 @@ import (
 	"math/big"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var (
 	// ErrInvalidID is returned when an Event has no stable external identity.
 	ErrInvalidID = errors.New("event id is required")
+	ErrIDTooLong = errors.New("event id must not exceed 255 characters")
 	// ErrInvalidProjectID is returned when an Event has no owning Project.
 	ErrInvalidProjectID = errors.New("project id is required")
 	// ErrInvalidPlayerID is returned when an Event has no target Player.
 	ErrInvalidPlayerID = errors.New("player id is required")
 	// ErrInvalidType is returned when an Event type is empty.
 	ErrInvalidType = errors.New("event type is required")
+	ErrTypeTooLong = errors.New("event type must not exceed 255 characters")
 	// ErrInvalidOccurredAt is returned when the source occurrence time is missing.
 	ErrInvalidOccurredAt = errors.New("event occurred_at is required")
 	// ErrInvalidReceivedAt is returned when the server receive time is missing.
@@ -52,6 +55,9 @@ func New(id, projectID, playerID, eventType string, occurredAt, receivedAt time.
 	if id == "" {
 		return nil, ErrInvalidID
 	}
+	if utf8.RuneCountInString(id) > 255 {
+		return nil, ErrIDTooLong
+	}
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return nil, ErrInvalidProjectID
@@ -63,6 +69,9 @@ func New(id, projectID, playerID, eventType string, occurredAt, receivedAt time.
 	eventType = strings.TrimSpace(eventType)
 	if eventType == "" {
 		return nil, ErrInvalidType
+	}
+	if utf8.RuneCountInString(eventType) > 255 {
+		return nil, ErrTypeTooLong
 	}
 	if occurredAt.IsZero() {
 		return nil, ErrInvalidOccurredAt

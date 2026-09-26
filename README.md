@@ -37,6 +37,8 @@ Health check:
 GET /health
 ```
 
+Apply the ordered SQL migrations under `migrations/` before starting the API against a fresh database. The currently implemented REST surface is documented in `docs/api/openapi.yaml`.
+
 ### Configuration
 
 Copy `.env.example` as a reference for supported environment variables.
@@ -44,7 +46,8 @@ Copy `.env.example` as a reference for supported environment variables.
 Current baseline:
 
 - `OKE_GAAS_HTTP_ADDR` — HTTP listen address.
-- `DATABASE_URL` — PostgreSQL connection string. Persistence is not connected at process startup until a feature requires it.
+- `DATABASE_URL` — PostgreSQL connection string used by the API server.
+- `OKE_GAAS_ADMIN_API_KEY` — operator bearer secret used only to create Projects; use at least 32 random characters.
 
 ### Quality checks
 
@@ -54,7 +57,7 @@ go vet ./...
 go test ./...
 ```
 
-CI runs formatting, vet, and tests on pull requests and pushes to `main`.
+Pull-request CI is gated by the `ci-ready` label after manual review. Pushes to `main` remain a final repository-health validation.
 
 ## Initial repository structure
 
