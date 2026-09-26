@@ -790,20 +790,20 @@ Pull-request CI must not consume runner time before a human/manual code review h
 
 Required sequence:
 
-1. Open or update the pull request.
-2. Perform manual code review first.
+1. Open implementation pull requests as **Draft**.
+2. Perform manual code review while the PR remains Draft.
 3. Resolve review findings and push any required fixes.
-4. Approve the reviewed revision.
-5. Only then run CI for that pull request.
-6. Merge only after the approved revision has green CI.
+4. When the reviewed revision is ready, mark the PR **Ready for review**.
+5. That transition triggers CI for the reviewed revision.
+6. Merge only after that CI run is green.
 
 Repository automation must enforce this policy where practical:
 
 - ordinary pull-request open, reopen, and synchronize events must not automatically start the full CI job
-- pull-request CI may start after an `APPROVED` review is submitted
+- the full PR CI should run on the `ready_for_review` transition
 - a deliberate manual `workflow_dispatch` run is allowed as an explicit fallback
 - pushes to the default branch may run CI as post-merge verification
-- if new commits are pushed after approval, the new revision must be reviewed and approved again before its CI run
+- if new commits are pushed after a successful review/CI cycle, return the PR to Draft, review the new revision, then mark it Ready for review again before merge
 
 Do not trigger expensive CI merely to discover problems that should have been caught during manual review. Review first, CI second.
 
