@@ -156,16 +156,18 @@ export function createGaas(config: GaasConfig): GaasClient {
   const projectPath = `/v1/projects/${encodeURIComponent(projectId)}`;
 
   const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+    const headers = new Headers(init.headers);
+    headers.set("Accept", "application/json");
+    headers.set("Authorization", `Bearer ${apiKey}`);
+    if (init.body !== undefined && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
     let response: Response;
     try {
       response = await fetch(`${baseUrl}${path}`, {
         ...init,
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${apiKey}`,
-          ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
-          ...init.headers,
-        },
+        headers,
       });
     } catch (cause) {
       throw new GaasError("network_error", "request to Oke Gaas failed", undefined, { cause });
@@ -182,7 +184,11 @@ export function createGaas(config: GaasConfig): GaasClient {
     }
 
     if (payload === undefined) {
-      throw new GaasError("invalid_response", "Oke Gaas returned an empty response", response.status);
+      throw new GaasError(
+        "invalid_response",
+        "Oke Gaas returned an invalid or empty JSON response",
+        response.status,
+      );
     }
 
     return payload as T;
