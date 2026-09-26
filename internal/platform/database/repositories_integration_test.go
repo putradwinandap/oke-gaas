@@ -275,3 +275,50 @@ func TestAutoMigrateDevelopmentEnforcesEventPlayerProjectIsolation(t *testing.T)
 	require.NoError(t, err)
 	require.Error(t, events.Save(ctx, invalidOwnership))
 }
+
+
+func TestAutoMigrateDevelopmentIgnoresSameNamedConstraintOnAnotherTable(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+
+	db, err := OpenPostgres(dsn)
+	require.NoError(t, err)
+
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS events").Error)
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS players").Error)
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS projects").Error)
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS shadow_events").Error)
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS shadow_projects").Error)
+
+	require.NoError(t, db.Exec(`
+		CREATE TABLE shadow_projects (
+			id varchar(64) PRIMARY KEY
+		)
+	`).Error)
+	require.NoError(t, db.Exec(`
+		CREATE TABLE shadow_events (
+			project_id varchar(64) NOT NULL,
+			CONSTRAINT fk_events_project
+				FOREIGN KEY (project_id)
+				REFERENCES shadow_projects(id)
+		)
+	`).Error)
+	t.Cleanup(func() {
+		_ = db.Exec("DROP TABLE IF EXISTS shadow_events").Error
+		_ = db.Exec("DROP TABLE IF EXISTS shadow_projects").Error
+	})
+
+	require.NoError(t, AutoMigrateCoreForDevelopment(db))
+
+	var constraintCount int64
+	require.NoError(t, db.Raw(`
+		SELECT COUNT(*)
+		FROM pg_constraint
+		WHERE conname = 'fk_events_project'
+		  AND conrelid = 'events'::regclass
+		  AND contype = 'f'
+	`).Scan(&constraintCount).Error)
+	require.EqualValues(t, 1, constraintCount)
+}
