@@ -2,6 +2,7 @@ package player
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,4 +144,10 @@ func TestRegisterRequiresExistingProject(t *testing.T) {
 
 func serviceTestNow() (zeroTime time.Time) {
 	return zeroTime
+}
+
+func TestNewRejectsExternalIDLongerThanPersistenceLimit(t *testing.T) {
+	value, err := New("proj_1", strings.Repeat("a", 256), time.Now())
+	require.ErrorIs(t, err, ErrExternalIDTooLong)
+	require.Nil(t, value)
 }
