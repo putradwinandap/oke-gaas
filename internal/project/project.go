@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/putradwinandap/oke-gaas/internal/shared/identity"
 )
@@ -30,7 +31,7 @@ func New(name string, createdAt time.Time) (*Project, error) {
 	if name == "" {
 		return nil, ErrInvalidName
 	}
-	if len(name) > 255 {
+	if utf8.RuneCountInString(name) > 255 {
 		return nil, ErrNameTooLong
 	}
 
@@ -51,7 +52,7 @@ func Restore(id, name string, createdAt time.Time) (*Project, error) {
 	if name == "" {
 		return nil, ErrInvalidName
 	}
-	if len(name) > 255 {
+	if utf8.RuneCountInString(name) > 255 {
 		return nil, ErrNameTooLong
 	}
 
