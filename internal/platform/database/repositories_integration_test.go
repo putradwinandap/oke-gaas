@@ -252,6 +252,8 @@ func TestAutoMigrateDevelopmentEnforcesEventPlayerProjectIsolation(t *testing.T)
 	db, err := OpenPostgres(dsn)
 	require.NoError(t, err)
 
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS event_processing CASCADE").Error)
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS player_states CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS reward_grants CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS rules CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS events CASCADE").Error)
@@ -305,6 +307,8 @@ func TestAutoMigrateDevelopmentIgnoresSameNamedConstraintOnAnotherTable(t *testi
 	db, err := OpenPostgres(dsn)
 	require.NoError(t, err)
 
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS event_processing CASCADE").Error)
+	require.NoError(t, db.Exec("DROP TABLE IF EXISTS player_states CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS reward_grants CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS rules CASCADE").Error)
 	require.NoError(t, db.Exec("DROP TABLE IF EXISTS events CASCADE").Error)
