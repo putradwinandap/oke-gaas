@@ -21,13 +21,13 @@ import (
 const requestOperationTimeout = 10 * time.Second
 
 type Dependencies struct {
-	Projects  *project.ProvisionService
-	Players   *player.Service
-	Rules     *rule.Service
-	Progress  *progression.Service
-	States    progression.Repository
-	Access    *access.Service
-	AdminKey  string
+	Projects *project.ProvisionService
+	Players  *player.Service
+	Rules    *rule.Service
+	Progress *progression.Service
+	States   progression.Repository
+	Access   *access.Service
+	AdminKey string
 }
 
 // New creates the HTTP delivery adapter for the Oke Gaas API.
@@ -210,8 +210,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 			"duplicate": result.Duplicate,
 			"grants":    grants,
 			"state": fiber.Map{
-				"player_id": result.State.PlayerID(),
-				"xp":        result.State.XP(),
+				"player_id":  result.State.PlayerID(),
+				"xp":         result.State.XP(),
 				"updated_at": result.State.UpdatedAt(),
 			},
 		})
