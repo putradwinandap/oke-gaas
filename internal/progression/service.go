@@ -4,12 +4,19 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/player"
 	"github.com/putradwinandap/oke-gaas/internal/reward"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
 )
+
+// ProcessingClaims coordinates exactly-once processing attempts for a persisted Event.
+// A successful claim lives in the same database transaction as grants and Player State.
+type ProcessingClaims interface {
+	Claim(ctx context.Context, projectID, eventID string, processedAt time.Time) (bool, error)
+}
 
 // Work contains repositories bound to one transaction.
 type Work struct {
@@ -18,6 +25,7 @@ type Work struct {
 	Rules   rule.Repository
 	Grants  reward.Repository
 	States  Repository
+	Claims  ProcessingClaims
 }
 
 // Transactor executes one callback atomically.
@@ -58,7 +66,16 @@ func (s *Service) Process(ctx context.Context, command event.IngestCommand) (*Pr
 		result.Event = ingested.Event
 		result.Duplicate = ingested.Duplicate
 
-		if ingested.Duplicate {
+		claimed, err := work.Claims.Claim(
+			ctx,
+			ingested.Event.ProjectID(),
+			ingested.Event.ID(),
+			ingested.Event.ReceivedAt(),
+		)
+		if err != nil {
+			return fmt.Errorf("claim event processing: %w", err)
+		}
+		if !claimed {
 			result.Grants, err = work.Grants.ListByEvent(ctx, ingested.Event.ProjectID(), ingested.Event.ID())
 			if err != nil {
 				return fmt.Errorf("load existing reward grants: %w", err)
