@@ -134,7 +134,8 @@ internal/player/             Player domain + application service + repository in
 internal/event/              External Event domain + idempotent ingestion service + repository interface
 internal/rule/               Versioned exact-event XP Rule domain + repository interface
 internal/reward/             Auditable XP Reward Grant domain + evaluation service + repository interface
-internal/platform/database/  GORM/PostgreSQL records, queries, and migrations
+internal/progression/          Materialized Player State + transactional Event -> Reward -> State orchestration
+internal/platform/database/  GORM/PostgreSQL records, queries, transactions, and migrations
 ```
 
 Repository interfaces belong at the domain/application consumer boundary. GORM record types and query construction belong in infrastructure.
@@ -473,7 +474,7 @@ Reward Grant
 Player State
 ```
 
-`Player State` is a current materialized representation for efficient reads.
+`Player State` is a current materialized representation for efficient reads. The initial concrete state stores Project-scoped Player XP in `player_states` and is updated atomically with Reward Grants inside the same PostgreSQL transaction. Player State is derived/materialized data; Reward Grants remain the auditable historical source for why XP changed.
 
 Reward history provides auditability.
 
