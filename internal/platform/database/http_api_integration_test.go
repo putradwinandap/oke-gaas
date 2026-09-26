@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -229,4 +230,20 @@ func TestProjectCannotUseAnotherProjectsPlayer(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	errorBody := body["error"].(map[string]any)
 	require.Equal(t, "player_not_found", errorBody["code"])
+}
+
+func TestRESTRejectsOversizedPublicInputBeforePersistence(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+
+	resp, body := requestJSON(t, app, http.MethodPost, "/v1/projects", "test-admin-key", map[string]any{
+		"name": strings.Repeat("界", 256),
+	})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	errorBody := body["error"].(map[string]any)
+	require.Equal(t, "invalid_project_name", errorBody["code"])
+
+	var count int64
+	require.NoError(t, db.Table("projects").Count(&count).Error)
+	require.Zero(t, count)
 }
