@@ -26,7 +26,7 @@ paths:
               type: object
               required: [name]
               properties:
-                name: { type: string }
+                name: { type: string, maxLength: 255 }
       responses:
         "201": { description: Project created }
         "401": { $ref: "#/components/responses/Error" }
@@ -44,7 +44,7 @@ paths:
               type: object
               required: [external_id]
               properties:
-                external_id: { type: string }
+                external_id: { type: string, maxLength: 255 }
       responses:
         "201": { description: Player registered }
         "401": { $ref: "#/components/responses/Error" }
@@ -62,7 +62,7 @@ paths:
               type: object
               required: [event_type, xp]
               properties:
-                event_type: { type: string }
+                event_type: { type: string, maxLength: 255 }
                 xp: { type: integer, format: int64, minimum: 1 }
       responses:
         "201": { description: Rule created }
@@ -80,9 +80,9 @@ paths:
               type: object
               required: [event_id, player_id, type, occurred_at]
               properties:
-                event_id: { type: string, description: Stable caller-supplied identity scoped to the Project }
+                event_id: { type: string, maxLength: 255, description: Stable caller-supplied identity scoped to the Project }
                 player_id: { type: string }
-                type: { type: string }
+                type: { type: string, maxLength: 255 }
                 occurred_at: { type: string, format: date-time }
                 properties:
                   type: object
