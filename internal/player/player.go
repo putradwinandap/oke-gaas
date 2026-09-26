@@ -16,7 +16,7 @@ var (
 	// ErrInvalidProjectID is returned when a Player has no owning Project.
 	ErrInvalidProjectID = errors.New("project id is required")
 	// ErrInvalidExternalID is returned when a Player has no project-scoped external identifier.
-	ErrInvalidExternalID  = errors.New("player external id is required")
+	ErrInvalidExternalID = errors.New("player external id is required")
 	ErrExternalIDTooLong = errors.New("player external id must not exceed 255 characters")
 	// ErrExternalIDTaken is returned when the same external identifier already exists in a Project.
 	ErrExternalIDTaken = errors.New("player external id already exists in project")
