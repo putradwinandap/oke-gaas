@@ -203,6 +203,12 @@ func TestProjectAPIKeyCannotCrossTenantBoundary(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	errorBody := body["error"].(map[string]any)
 	require.Equal(t, "unauthorized", errorBody["code"])
+
+	var count int64
+	require.NoError(t, db.Table("players").
+		Where("project_id = ?", secondProjectID).
+		Count(&count).Error)
+	require.Zero(t, count)
 }
 
 func TestProjectCannotUseAnotherProjectsPlayer(t *testing.T) {
