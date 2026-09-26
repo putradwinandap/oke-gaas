@@ -9,16 +9,19 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/player"
 )
 
+// Service orchestrates external Event ingestion.
 type Service struct {
 	players player.Repository
 	events  Repository
 	now     func() time.Time
 }
 
+// NewService creates an Event ingestion service.
 func NewService(players player.Repository, events Repository) *Service {
 	return &Service{players: players, events: events, now: time.Now}
 }
 
+// IngestCommand contains the caller-supplied logical Event data.
 type IngestCommand struct {
 	ID         string
 	ProjectID  string
@@ -28,11 +31,14 @@ type IngestCommand struct {
 	Properties map[string]any
 }
 
+// IngestResult contains the persisted Event and whether the call was an idempotent retry.
 type IngestResult struct {
 	Event     *Event
 	Duplicate bool
 }
 
+// Ingest validates Player ownership, persists a new Event, or resolves an identical retry.
+// Reusing the same Project + Event identity with different logical data returns ErrIdentityConflict.
 func (s *Service) Ingest(ctx context.Context, command IngestCommand) (*IngestResult, error) {
 	candidate, err := New(
 		command.ID,

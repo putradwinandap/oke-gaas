@@ -392,9 +392,9 @@ Event identity supports:
 - reward tracing
 - abuse prevention
 
-Event identity is scoped to a Project. Reusing the same Project + Event identity with the same logical payload is an idempotent retry and returns the originally persisted Event. Reusing that identity with different logical event data is rejected as an identity conflict. Event properties are normalized through JSON before comparison so persistence round-trips do not change logical identity. Event timestamps are normalized to PostgreSQL microsecond precision before persistence and comparison.
+Event identity is scoped to a Project. Reusing the same Project + Event identity with the same logical payload is an idempotent retry and returns the originally persisted Event. Reusing that identity with different logical event data is rejected as an identity conflict. Event properties are normalized through JSON before comparison; JSON numbers are compared by exact numeric value so PostgreSQL `jsonb` representation changes do not create false conflicts. Event timestamps are normalized to PostgreSQL microsecond precision before persistence and comparison.
 
-Player ownership must be verified within the Event's Project before persistence, and persistence must also enforce the Project/Player relationship.
+Player ownership must be verified within the Event's Project before persistence, and persistence must also enforce the Project/Player relationship. Duplicate detection must not abort an enclosing PostgreSQL transaction; persistence should use conflict-safe insertion or an equivalent transaction-safe mechanism.
 
 The exact public API shape is not yet permanently locked, but implementation must preserve these semantics.
 
@@ -791,11 +791,46 @@ Do not mix unrelated refactors, formatting changes, and feature behavior in one 
 
 Before merge:
 
+- perform a manual code review before spending GitHub Actions CI quota
+- run the relevant formatter, static checks, unit tests, and integration tests locally first
+- do not automatically run the full PR CI merely because a PR is opened, synchronized, or receives another commit
+- after manual review finds the current revision ready for validation, apply the `ci-ready` label
+- applying `ci-ready` is the explicit manual gate that starts full PR CI
 - tests must pass
-- CI must be green
+- CI must be green for the current reviewed revision
 - review feedback must be resolved
 - relevant documentation must be current
 - issue acceptance criteria must be satisfied
+
+### 20.1 CI execution and quota policy
+
+GitHub Actions CI is a final remote validation gate, not the first feedback loop.
+
+For pull requests:
+
+1. Review the current diff manually for correctness, security, architecture, consistency, and obvious defects.
+2. Fix review findings before running remote CI.
+3. Run the equivalent checks locally whenever practical.
+4. When the current revision is ready for remote validation, apply the `ci-ready` label.
+5. The `ci-ready` label triggers full PR CI.
+6. If any new commit is pushed afterward, `ci-ready` must be removed automatically because the reviewed revision changed.
+7. Review the new revision, then apply `ci-ready` again to trigger a fresh CI run.
+8. If CI fails, diagnose and reproduce the failure locally before triggering another run whenever practical.
+9. Do not repeatedly re-run CI to discover problems that can be found through local tests, formatting, vetting, or manual review.
+
+The `ci-ready` label represents only this statement:
+
+> The current PR head revision has been manually reviewed and is ready to spend CI quota.
+
+It must never be treated as permanent approval for later commits.
+
+The workflow must listen for PR label and synchronize events only to enforce the gate. A synchronize event must not run the expensive test suite; it should only invalidate/remove `ci-ready` when the PR head changes.
+
+`workflow_dispatch` remains available as an explicit emergency/maintenance fallback, but `ci-ready` is the normal PR CI gate.
+
+CI on the default branch may still run automatically after merge as a final repository-health check.
+
+Exception: automatic full PR CI may be reintroduced only through an explicit engineering decision when the repository's risk profile, team size, branch-protection requirements, or available CI quota justify it.
 
 After a branch is merged:
 

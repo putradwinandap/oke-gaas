@@ -1,0 +1,33 @@
+name: Invalidate CI Ready
+
+on:
+  pull_request_target:
+    types:
+      - synchronize
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ci-ready-invalidation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  invalidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Remove stale ci-ready label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          labels="$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}" --jq '.labels[].name')"
+          if echo "$labels" | grep -Fxq 'ci-ready'; then
+            gh api               --method DELETE               "repos/${GH_REPO}/issues/${PR_NUMBER}/labels/ci-ready"
+            echo "Removed stale ci-ready label because the PR head changed."
+          else
+            echo "ci-ready is not present; nothing to invalidate."
+          fi
