@@ -251,6 +251,8 @@ export function createGaas(config: GaasConfig): GaasClient {
         options,
       );
       const value = requireApiTrackResult(result.payload, result.status);
+      requireResponseInvariant(value.event_id === eventId, result.status);
+      requireResponseInvariant(value.state.player_id === playerId, result.status);
 
       return {
         eventId: value.event_id,
@@ -282,6 +284,8 @@ export function createGaas(config: GaasConfig): GaasClient {
           options,
         );
         const value = requireApiPlayer(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        requireResponseInvariant(value.external_id === externalId, result.status);
         return {
           id: value.id,
           projectId: value.project_id,
@@ -298,6 +302,8 @@ export function createGaas(config: GaasConfig): GaasClient {
           options,
         );
         const value = requireApiPlayerState(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        requireResponseInvariant(value.player_id === normalizedPlayerId, result.status);
         return {
           projectId: value.project_id,
           playerId: value.player_id,
@@ -320,6 +326,9 @@ export function createGaas(config: GaasConfig): GaasClient {
           options,
         );
         const value = requireApiRule(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        requireResponseInvariant(value.event_type === eventType, result.status);
+        requireResponseInvariant(value.xp === xp, result.status);
         return {
           id: value.id,
           projectId: value.project_id,
@@ -462,6 +471,12 @@ function requireApiPlayerState(value: unknown, status: number): ApiPlayerState {
     throw invalidResponse(status);
   }
   return value;
+}
+
+function requireResponseInvariant(condition: boolean, status: number): void {
+  if (!condition) {
+    throw invalidResponse(status);
+  }
 }
 
 function invalidResponse(status: number): GaasError {
