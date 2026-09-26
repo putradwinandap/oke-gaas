@@ -10,7 +10,7 @@ import (
 // local development and tests only. Production schema evolution must use the
 // versioned SQL migrations under /migrations.
 func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
-	if err := db.AutoMigrate(&projectRecord{}, &playerRecord{}); err != nil {
+	if err := db.AutoMigrate(&projectRecord{}, &playerRecord{}, &eventRecord{}); err != nil {
 		return fmt.Errorf("auto-migrate core development schema: %w", err)
 	}
 	return nil
