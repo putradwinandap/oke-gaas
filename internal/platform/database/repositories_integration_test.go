@@ -13,7 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-
 func openIntegrationDatabase(t *testing.T) *gorm.DB {
 	t.Helper()
 
