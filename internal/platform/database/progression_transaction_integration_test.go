@@ -242,3 +242,65 @@ func TestPlayerStateRejectsCrossProjectMutation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(0), state.XP())
 }
+
+
+func TestConcurrentDuplicateEventProcessesExactlyOnce(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+	proj, pl := seedProgressionFixture(t, db, 100)
+
+	service := progression.NewService(NewProgressionTransactor(db))
+	command := eventdomain.IngestCommand{
+		ID:         "evt_concurrent",
+		ProjectID:  proj.ID(),
+		PlayerID:   pl.ID(),
+		Type:       "lesson_completed",
+		OccurredAt: time.Now().Add(-time.Minute),
+	}
+
+	const workers = 2
+	results := make(chan *progression.ProcessResult, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			result, err := service.Process(ctx, command)
+			results <- result
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	var duplicateCount int
+	for result := range results {
+		require.NotNil(t, result)
+		if result.Duplicate {
+			duplicateCount++
+		}
+		require.Equal(t, int64(100), result.State.XP())
+	}
+	require.Equal(t, 1, duplicateCount)
+
+	grants, err := NewRewardGrantRepository(db).ListByEvent(ctx, proj.ID(), command.ID)
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+
+	state, err := NewPlayerStateRepository(db).Get(ctx, proj.ID(), pl.ID())
+	require.NoError(t, err)
+	require.Equal(t, int64(100), state.XP())
+
+	var claimCount int64
+	require.NoError(t, db.Table("event_processing").
+		Where("project_id = ? AND event_id = ?", proj.ID(), command.ID).
+		Count(&claimCount).Error)
+	require.Equal(t, int64(1), claimCount)
+}
