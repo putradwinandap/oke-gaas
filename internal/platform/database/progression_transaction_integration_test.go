@@ -11,6 +11,7 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/player"
 	"github.com/putradwinandap/oke-gaas/internal/progression"
 	"github.com/putradwinandap/oke-gaas/internal/project"
+	rewarddomain "github.com/putradwinandap/oke-gaas/internal/reward"
 	ruledomain "github.com/putradwinandap/oke-gaas/internal/rule"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -301,6 +302,84 @@ func TestConcurrentDuplicateEventProcessesExactlyOnce(t *testing.T) {
 	var claimCount int64
 	require.NoError(t, db.Table("event_processing").
 		Where("project_id = ? AND event_id = ?", proj.ID(), command.ID).
+		Count(&claimCount).Error)
+	require.Equal(t, int64(1), claimCount)
+}
+
+
+func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL is not configured")
+	}
+
+	db, err := OpenPostgres(dsn)
+	require.NoError(t, err)
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for _, table := range []string{"event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
+	}
+	for _, path := range []string{
+		"../../../migrations/000001_core.up.sql",
+		"../../../migrations/000002_events.up.sql",
+		"../../../migrations/000003_rules_rewards.up.sql",
+	} {
+		sql, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.NoError(t, db.Exec(string(sql)).Error)
+	}
+
+	ctx := context.Background()
+	proj, err := project.New("Historical", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+
+	pl, err := player.New(proj.ID(), "legacy-player", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, pl))
+
+	ev, err := eventdomain.New(
+		"evt_historical",
+		proj.ID(),
+		pl.ID(),
+		"lesson_completed",
+		time.Now().Add(-2*time.Hour),
+		time.Now().Add(-time.Hour),
+		nil,
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewEventRepository(db).Save(ctx, ev))
+
+	rule, err := ruledomain.New("rule_historical", proj.ID(), 1, "lesson_completed", 75)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, rule))
+
+	grant, err := rewarddomain.NewGrant(
+		"grant_historical",
+		proj.ID(),
+		pl.ID(),
+		ev.ID(),
+		rule.ID(),
+		rule.Version(),
+		rule.XPAmount(),
+		time.Now().Add(-30*time.Minute),
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewRewardGrantRepository(db).Save(ctx, grant))
+
+	require.NoError(t, AutoMigrateCoreForDevelopment(db))
+
+	state, err := NewPlayerStateRepository(db).Get(ctx, proj.ID(), pl.ID())
+	require.NoError(t, err)
+	require.Equal(t, int64(75), state.XP())
+
+	var claimCount int64
+	require.NoError(t, db.Table("event_processing").
+		Where("project_id = ? AND event_id = ?", proj.ID(), ev.ID()).
 		Count(&claimCount).Error)
 	require.Equal(t, int64(1), claimCount)
 }
