@@ -10,6 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const playerProjectExternalUniqueConstraint = "idx_players_project_external"
+
 type playerRecord struct {
 	ID         string        `gorm:"type:varchar(64);primaryKey"`
 	ProjectID  string        `gorm:"type:varchar(64);not null;index;index:idx_players_project_external,unique"`
@@ -40,10 +42,11 @@ func (r *PlayerRepository) Save(ctx context.Context, value *player.Player) error
 	}
 
 	if err := r.db.WithContext(ctx).Omit("Project").Create(&record).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
+		mappedErr := mapPersistenceError(err)
+		if isUniqueConstraint(mappedErr, playerProjectExternalUniqueConstraint) {
 			return player.ErrExternalIDTaken
 		}
-		return fmt.Errorf("create player: %w", err)
+		return fmt.Errorf("create player: %w", mappedErr)
 	}
 
 	return nil
