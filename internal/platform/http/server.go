@@ -58,7 +58,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 		}
 		result, err := deps.Projects.Provision(ctx, request.Name)
 		if err != nil {
-			if errors.Is(err, project.ErrInvalidName) {
+			if errors.Is(err, project.ErrInvalidName) || errors.Is(err, project.ErrNameTooLong) {
 				return writeError(c, fiber.StatusBadRequest, "invalid_project_name", err.Error())
 			}
 			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not create project")
@@ -89,7 +89,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 		value, err := deps.Players.Register(ctx, projectID, request.ExternalID)
 		if err != nil {
 			switch {
-			case errors.Is(err, player.ErrInvalidExternalID):
+			case errors.Is(err, player.ErrInvalidExternalID), errors.Is(err, player.ErrExternalIDTooLong):
 				return writeError(c, fiber.StatusBadRequest, "invalid_external_id", err.Error())
 			case errors.Is(err, player.ErrExternalIDTaken):
 				return writeError(c, fiber.StatusConflict, "player_exists", err.Error())
@@ -124,7 +124,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 		value, err := deps.Rules.CreateExactXP(ctx, projectID, request.EventType, request.XP)
 		if err != nil {
 			switch {
-			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrInvalidXPAmount):
+			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrEventTypeTooLong), errors.Is(err, rule.ErrInvalidXPAmount):
 				return writeError(c, fiber.StatusBadRequest, "invalid_rule", err.Error())
 			case errors.Is(err, project.ErrNotFound):
 				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
@@ -168,11 +168,11 @@ func New(dependencies ...Dependencies) *fiber.App {
 		})
 		if err != nil {
 			switch {
-			case errors.Is(err, eventdomain.ErrInvalidID):
+			case errors.Is(err, eventdomain.ErrInvalidID), errors.Is(err, eventdomain.ErrIDTooLong):
 				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidID.Error())
 			case errors.Is(err, eventdomain.ErrInvalidPlayerID):
 				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidPlayerID.Error())
-			case errors.Is(err, eventdomain.ErrInvalidType):
+			case errors.Is(err, eventdomain.ErrInvalidType), errors.Is(err, eventdomain.ErrTypeTooLong):
 				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidType.Error())
 			case errors.Is(err, eventdomain.ErrInvalidOccurredAt):
 				return writeError(c, fiber.StatusBadRequest, "invalid_event", eventdomain.ErrInvalidOccurredAt.Error())
