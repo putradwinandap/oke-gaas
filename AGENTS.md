@@ -228,7 +228,7 @@ GORM model tags remain useful mapping metadata, but they are not the production 
 
 See `docs/decisions/003-versioned-database-migrations.md`.
 
-### 4.4 Go-specific baseline
+### 4.5 Go-specific baseline
 
 All Go code must follow idiomatic Go conventions.
 
