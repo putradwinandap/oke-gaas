@@ -40,6 +40,8 @@ docs/
 
 Use ADR-style documents under `docs/decisions/` for significant architectural decisions. This file should retain the current authoritative rule or direction and link to detailed documentation when necessary.
 
+Product direction, roadmap, and actionable implementation work live in GitHub Issues. Issue #1 is the umbrella product-direction issue; subsequent issues break the roadmap into implementable slices.
+
 ---
 
 ## 2. Product Engineering Context
@@ -299,7 +301,7 @@ Tenant isolation must be covered by automated tests when persistence and authori
 
 ## 7. Event Model
 
-### 6.1 External events
+### 7.1 External events
 
 External/application events describe what happened in the integrating application.
 
@@ -329,7 +331,7 @@ Canonical conceptual envelope:
 
 The server may record metadata such as `received_at`.
 
-### 6.2 Domain events
+### 7.2 Domain events
 
 Domain events describe meaningful outcomes inside Oke Gaas.
 
@@ -344,7 +346,7 @@ StreakAdvanced
 
 Keep external events and domain events conceptually distinct.
 
-### 6.3 Event identity and idempotency
+### 7.3 Event identity and idempotency
 
 Stable event identity and idempotent ingestion are required from the initial vertical slice.
 
@@ -779,9 +781,6 @@ Documentation is part of the implementation.
 Repository roles:
 
 ```text
-PROJECT.md
-    product vision, scope, use cases, product roadmap
-
 AGENTS.md
     engineering source of truth, architecture, standards, consistency rules
 
@@ -795,12 +794,12 @@ docs/concepts/
     detailed domain concepts and semantics
 
 GitHub Issues
-    small actionable units of planned work
+    product direction, roadmap, and small actionable units of planned work
 ```
 
 Do not allow the same authoritative engineering rule to diverge across multiple files.
 
-When detail moves from `PROJECT.md` into `/docs`, preserve links/context rather than duplicating large sections.
+When product detail becomes durable technical knowledge, move the technical explanation into `/docs` and keep the related issue focused on decisions, acceptance criteria, and work status.
 
 ---
 
