@@ -60,11 +60,14 @@ CI runs formatting, vet, and tests on pull requests and pushes to `main`.
 
 ```text
 cmd/server/                    application entry point
-internal/platform/config/     process configuration
-internal/platform/http/       Fiber delivery adapter
-internal/platform/database/   GORM/PostgreSQL adapter
-internal/platform/validation/ validator adapter
-docs/                         durable technical documentation
+internal/project/              Project domain + application behavior
+internal/player/               Player domain + application behavior
+internal/shared/identity/      shared domain identifier generation
+internal/platform/config/      process configuration
+internal/platform/http/        Fiber delivery adapter
+internal/platform/database/    GORM/PostgreSQL adapters + schema migration
+internal/platform/validation/  validator adapter
+docs/                          durable technical documentation
 ```
 
-Domain modules will be introduced only as concrete vertical slices require them. Fiber and GORM must not leak into domain code.
+Project and Player are the first concrete domain modules. Repository interfaces live with domain/application code, while GORM records and database queries remain under `internal/platform/database/`. Fiber and GORM must not leak into domain code.
