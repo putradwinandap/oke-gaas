@@ -8,6 +8,7 @@ const defaultHTTPAddr = ":8080"
 type Config struct {
 	HTTPAddr    string
 	DatabaseURL string
+	AdminAPIKey string
 }
 
 // Load reads configuration from environment variables and applies safe local defaults.
@@ -20,5 +21,6 @@ func Load() Config {
 	return Config{
 		HTTPAddr:    httpAddr,
 		DatabaseURL: os.Getenv("DATABASE_URL"),
+		AdminAPIKey: os.Getenv("OKE_GAAS_ADMIN_API_KEY"),
 	}
 }
