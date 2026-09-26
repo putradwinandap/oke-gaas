@@ -25,7 +25,6 @@ func TestHealthEndpoint(t *testing.T) {
 	require.Equal(t, "ok", body["status"])
 }
 
-
 func TestCentralErrorHandlerReturnsSanitizedJSONEnvelope(t *testing.T) {
 	app := New()
 	app.Get("/transport-error", func(c fiber.Ctx) error {
