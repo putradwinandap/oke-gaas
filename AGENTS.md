@@ -784,6 +784,29 @@ Prefer short-lived branches.
 
 Do not mix unrelated refactors, formatting changes, and feature behavior in one commit unless they are inseparable.
 
+### 20.1 Manual review before CI
+
+Pull-request CI must not consume runner time before a human/manual code review has completed.
+
+Required sequence:
+
+1. Open or update the pull request.
+2. Perform manual code review first.
+3. Resolve review findings and push any required fixes.
+4. Approve the reviewed revision.
+5. Only then run CI for that pull request.
+6. Merge only after the approved revision has green CI.
+
+Repository automation must enforce this policy where practical:
+
+- ordinary pull-request open, reopen, and synchronize events must not automatically start the full CI job
+- pull-request CI may start after an `APPROVED` review is submitted
+- a deliberate manual `workflow_dispatch` run is allowed as an explicit fallback
+- pushes to the default branch may run CI as post-merge verification
+- if new commits are pushed after approval, the new revision must be reviewed and approved again before its CI run
+
+Do not trigger expensive CI merely to discover problems that should have been caught during manual review. Review first, CI second.
+
 Before merge:
 
 - tests must pass
