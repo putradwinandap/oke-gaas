@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -182,4 +183,62 @@ func TestEventProcessingClaimPreventsReprocessingExistingEvent(t *testing.T) {
 	require.True(t, result.Duplicate)
 	require.Empty(t, result.Grants)
 	require.Equal(t, int64(0), result.State.XP())
+}
+
+
+func TestPlayerStateConcurrentXPIncrementsDoNotLoseUpdates(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+	proj, pl := seedProgressionFixture(t, db, 1)
+
+	states := NewPlayerStateRepository(db)
+	_, err := states.Ensure(ctx, proj.ID(), pl.ID(), time.Now())
+	require.NoError(t, err)
+
+	const workers = 10
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			_, err := states.AddXP(ctx, proj.ID(), pl.ID(), 1, time.Now())
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	state, err := states.Get(ctx, proj.ID(), pl.ID())
+	require.NoError(t, err)
+	require.Equal(t, int64(workers), state.XP())
+}
+
+func TestPlayerStateRejectsCrossProjectMutation(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+	proj, pl := seedProgressionFixture(t, db, 1)
+
+	otherProject, err := project.New("Other", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, otherProject))
+
+	states := NewPlayerStateRepository(db)
+	_, err = states.Ensure(ctx, proj.ID(), pl.ID(), time.Now())
+	require.NoError(t, err)
+
+	_, err = states.Get(ctx, otherProject.ID(), pl.ID())
+	require.ErrorIs(t, err, progression.ErrStateNotFound)
+
+	_, err = states.AddXP(ctx, otherProject.ID(), pl.ID(), 10, time.Now())
+	require.Error(t, err)
+
+	state, err := states.Get(ctx, proj.ID(), pl.ID())
+	require.NoError(t, err)
+	require.Equal(t, int64(0), state.XP())
 }
