@@ -44,7 +44,8 @@ Copy `.env.example` as a reference for supported environment variables.
 Current baseline:
 
 - `OKE_GAAS_HTTP_ADDR` — HTTP listen address.
-- `DATABASE_URL` — PostgreSQL connection string used by the API server.\n- `OKE_GAAS_ADMIN_API_KEY` — operator bearer secret used only to create Projects; use at least 32 random characters.
+- `DATABASE_URL` — PostgreSQL connection string used by the API server.
+- `OKE_GAAS_ADMIN_API_KEY` — operator bearer secret used only to create Projects; use at least 32 random characters.
 
 ### Quality checks
 
