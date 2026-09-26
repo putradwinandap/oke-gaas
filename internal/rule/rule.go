@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/putradwinandap/oke-gaas/internal/event"
 )
@@ -44,7 +45,7 @@ func New(id, projectID string, version uint64, eventType string, xpAmount int64)
 	if eventType == "" {
 		return nil, ErrInvalidEventType
 	}
-	if len(eventType) > 255 {
+	if utf8.RuneCountInString(eventType) > 255 {
 		return nil, ErrEventTypeTooLong
 	}
 	if xpAmount <= 0 {
