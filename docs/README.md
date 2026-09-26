@@ -20,6 +20,7 @@ The umbrella product-direction issue is [#1 — define Oke Gaas product directio
 
 - [ADR-001: Initial Technology Stack](./decisions/001-initial-technology-stack.md)
 - [ADR-002: Event-Driven Modular Monolith](./decisions/002-modular-monolith.md)
+- [ADR-003: Versioned Database Migrations](./decisions/003-versioned-database-migrations.md)
 
 ## Concepts
 
