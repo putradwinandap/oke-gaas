@@ -788,24 +788,34 @@ Do not mix unrelated refactors, formatting changes, and feature behavior in one 
 
 Pull-request CI must not consume runner time before a human/manual code review has completed.
 
+The canonical PR CI gate is the `ci-ready` label.
+
 Required sequence:
 
-1. Open implementation pull requests as **Draft**.
-2. Perform manual code review while the PR remains Draft.
+1. Open or update the pull request without triggering full CI.
+2. Perform manual code review on the current head revision.
 3. Resolve review findings and push any required fixes.
-4. When the reviewed revision is ready, mark the PR **Ready for review**.
-5. That transition triggers CI for the reviewed revision.
-6. Merge only after that CI run is green.
+4. Run the relevant formatter, static checks, unit tests, and integration tests locally whenever practical.
+5. Only when the current head revision is considered ready for remote validation, add the `ci-ready` label.
+6. Adding `ci-ready` triggers CI for that reviewed revision.
+7. Merge only after that CI run is green and still corresponds to the current PR head SHA.
+
+Gate invalidation rules:
+
+- any new commit pushed after `ci-ready` was applied invalidates the previous manual review and CI approval for merge purposes
+- after a new commit, remove `ci-ready` if it is still present
+- review the new head revision again before restoring the gate
+- after review is complete, re-add `ci-ready` to trigger a fresh CI run for the new head SHA
+- never treat a green CI result from an older commit as approval for a newer PR head
 
 Repository automation must enforce this policy where practical:
 
 - ordinary pull-request open, reopen, and synchronize events must not automatically start the full CI job
-- the full PR CI should run on the `ready_for_review` transition
-- a deliberate manual `workflow_dispatch` run is allowed as an explicit fallback
+- the full PR CI runs only when the `ci-ready` label is newly applied
+- do not provide an alternate manual CI trigger that bypasses the `ci-ready` review gate
 - pushes to the default branch may run CI as post-merge verification
-- if new commits are pushed after a successful review/CI cycle, return the PR to Draft, review the new revision, then mark it Ready for review again before merge
 
-Do not trigger expensive CI merely to discover problems that should have been caught during manual review. Review first, CI second.
+Do not trigger expensive CI merely to discover problems that should have been caught during manual review. Review first, label second, CI third.
 
 Before merge:
 
