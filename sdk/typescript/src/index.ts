@@ -560,15 +560,20 @@ function createRequestSignal(callerSignal: AbortSignal | undefined, timeoutMs: n
   wasCallerAborted: () => boolean;
 } {
   const controller = new AbortController();
-  let timedOut = false;
+  let abortSource: "timeout" | "caller" | undefined;
 
   const timeoutID = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
+    if (!controller.signal.aborted) {
+      abortSource = "timeout";
+      controller.abort();
+    }
   }, timeoutMs);
 
   const onCallerAbort = () => {
-    controller.abort(callerSignal?.reason);
+    if (!controller.signal.aborted) {
+      abortSource = "caller";
+      controller.abort(callerSignal?.reason);
+    }
   };
 
   if (callerSignal?.aborted) {
@@ -583,7 +588,7 @@ function createRequestSignal(callerSignal: AbortSignal | undefined, timeoutMs: n
       clearTimeout(timeoutID);
       callerSignal?.removeEventListener("abort", onCallerAbort);
     },
-    didTimeout: () => timedOut,
-    wasCallerAborted: () => callerSignal?.aborted === true,
+    didTimeout: () => abortSource === "timeout",
+    wasCallerAborted: () => abortSource === "caller",
   };
 }
