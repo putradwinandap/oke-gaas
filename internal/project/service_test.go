@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,4 +54,10 @@ func TestNewRejectsBlankProjectName(t *testing.T) {
 
 func serviceTestTime() (zeroTime time.Time) {
 	return zeroTime
+}
+
+func TestNewRejectsProjectNameLongerThanPersistenceLimit(t *testing.T) {
+	value, err := New(strings.Repeat("a", 256), time.Now())
+	require.ErrorIs(t, err, ErrNameTooLong)
+	require.Nil(t, value)
 }
