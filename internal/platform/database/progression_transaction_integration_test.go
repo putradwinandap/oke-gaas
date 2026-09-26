@@ -186,7 +186,6 @@ func TestEventProcessingClaimPreventsReprocessingExistingEvent(t *testing.T) {
 	require.Equal(t, int64(0), result.State.XP())
 }
 
-
 func TestPlayerStateConcurrentXPIncrementsDoNotLoseUpdates(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
 	ctx := context.Background()
@@ -243,7 +242,6 @@ func TestPlayerStateRejectsCrossProjectMutation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(0), state.XP())
 }
-
 
 func TestConcurrentDuplicateEventProcessesExactlyOnce(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
@@ -305,7 +303,6 @@ func TestConcurrentDuplicateEventProcessesExactlyOnce(t *testing.T) {
 		Count(&claimCount).Error)
 	require.Equal(t, int64(1), claimCount)
 }
-
 
 func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
