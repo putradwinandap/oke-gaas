@@ -9,6 +9,7 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/player"
 	"github.com/putradwinandap/oke-gaas/internal/project"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func openIntegrationDatabase(t *testing.T) *gorm.DB {
