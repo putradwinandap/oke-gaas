@@ -9,9 +9,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -22,15 +27,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Prepare module metadata
-        run: |
-          go mod tidy
-          echo "----- go.mod -----"
-          cat go.mod
-          echo "----- go.sum -----"
-          cat go.sum
-          echo "----- end module metadata -----"
+          cache-dependency-path: go.sum
 
       - name: Check formatting
         run: |
@@ -42,8 +39,14 @@ jobs:
             exit 1
           fi
 
+      - name: Verify module metadata
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go mod verify
+
       - name: Vet
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        run: go test -vet=off ./...
