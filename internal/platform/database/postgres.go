@@ -14,5 +14,7 @@ func OpenPostgres(dsn string) (*gorm.DB, error) {
 		return nil, errors.New("database URL is required")
 	}
 
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
+	// Keep driver errors intact so persistence adapters can inspect PostgreSQL
+	// SQLSTATE and constraint names before mapping them to domain errors.
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: false})
 }

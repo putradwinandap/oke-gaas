@@ -210,7 +210,25 @@ Examples include:
 
 Do not write ORM gymnastics merely to avoid SQL.
 
-### 4.4 Go-specific baseline
+### 4.4 Persistence migrations
+
+Production schema evolution must use ordered, versioned SQL migrations under `/migrations`.
+
+Rules:
+
+- migration files are immutable after they have been applied to a shared environment
+- use explicit constraint and index names when application error mapping depends on them
+- schema changes must be reviewable independently from ORM model tags
+- local development and tests may use `AutoMigrateCoreForDevelopment` for convenience
+- production startup must not call GORM `AutoMigrate`
+- production deployments must apply versioned migrations as an explicit deployment step before running code that depends on the new schema
+- destructive or irreversible migrations require an explicit rollback/forward-fix plan
+
+GORM model tags remain useful mapping metadata, but they are not the production migration source of truth.
+
+See `docs/decisions/003-versioned-database-migrations.md`.
+
+### 4.5 Go-specific baseline
 
 All Go code must follow idiomatic Go conventions.
 

@@ -6,10 +6,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// MigrateCore creates or updates the persistence schema required by the current core modules.
-func MigrateCore(db *gorm.DB) error {
+// AutoMigrateCoreForDevelopment creates or updates the current core schema for
+// local development and tests only. Production schema evolution must use the
+// versioned SQL migrations under /migrations.
+func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 	if err := db.AutoMigrate(&projectRecord{}, &playerRecord{}); err != nil {
-		return fmt.Errorf("migrate core schema: %w", err)
+		return fmt.Errorf("auto-migrate core development schema: %w", err)
 	}
 	return nil
 }
