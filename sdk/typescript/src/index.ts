@@ -357,6 +357,12 @@ function normalizeBaseUrl(value: string): string {
   if (typeof value !== "string") {
     throw new TypeError("baseUrl must be a valid absolute URL");
   }
+  if (value.includes("?")) {
+    throw new TypeError("baseUrl must not contain a query string");
+  }
+  if (value.includes("#")) {
+    throw new TypeError("baseUrl must not contain a fragment");
+  }
 
   let url: URL;
   try {
@@ -370,13 +376,6 @@ function normalizeBaseUrl(value: string): string {
   if (url.username !== "" || url.password !== "") {
     throw new TypeError("baseUrl must not contain credentials");
   }
-  if (url.search !== "") {
-    throw new TypeError("baseUrl must not contain a query string");
-  }
-  if (url.hash !== "") {
-    throw new TypeError("baseUrl must not contain a fragment");
-  }
-
   url.pathname = url.pathname.replace(/\/+$/, "");
   return url.toString().replace(/\/+$/, "");
 }
