@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS reward_grants;
+DROP TABLE IF EXISTS rules;

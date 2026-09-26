@@ -30,6 +30,8 @@ version 2: lesson_completed -> +50 XP
 
 Reward history should identify the rule and rule version responsible for the grant.
 
+For the initial model, the highest persisted version of a given `rule_id` is the active version. Older versions remain immutable historical definitions and must not be re-evaluated for new events.
+
 ## Reward
 
 A Reward is the outcome of successful rule evaluation.

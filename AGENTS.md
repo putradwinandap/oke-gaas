@@ -132,6 +132,8 @@ Current concrete module layout:
 internal/project/            Project domain + application service + repository interface
 internal/player/             Player domain + application service + repository interface
 internal/event/              External Event domain + idempotent ingestion service + repository interface
+internal/rule/               Versioned exact-event XP Rule domain + repository interface
+internal/reward/             Auditable XP Reward Grant domain + evaluation service + repository interface
 internal/platform/database/  GORM/PostgreSQL records, queries, and migrations
 ```
 
@@ -414,6 +416,8 @@ lesson_completed -> +50 XP    rule version 2
 ```
 
 Historical reward records must be traceable to the specific rule version that produced them.
+
+For the initial rule model, the highest persisted version of a given `rule_id` is the active version. Older versions remain immutable for auditability and must not be evaluated alongside the current version.
 
 At minimum, reward history should be able to identify:
 
