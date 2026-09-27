@@ -391,6 +391,94 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 }
 
 
+
+func TestAggregateCounterRollsBackWhenPlayerStateUpdateFails(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+
+	proj, err := project.New("Aggregate Rollback", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+
+	pl, err := player.New(proj.ID(), "aggregate-rollback-player", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, pl))
+
+	aggregate, err := ruledomain.NewAggregate(
+		"rule_aggregate_rollback",
+		proj.ID(),
+		1,
+		"lesson_completed",
+		1,
+		nil,
+		2,
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, aggregate))
+
+	states := NewPlayerStateRepository(db)
+	_, err = states.AddXP(ctx, proj.ID(), pl.ID(), int64(^uint64(0)>>1), time.Now())
+	require.NoError(t, err)
+
+	service := progression.NewService(NewProgressionTransactor(db))
+	first := eventdomain.IngestCommand{
+		ID:         "evt_aggregate_first",
+		ProjectID:  proj.ID(),
+		PlayerID:   pl.ID(),
+		Type:       "lesson_completed",
+		OccurredAt: time.Now().Add(-2 * time.Minute),
+	}
+	firstResult, err := service.Process(ctx, first)
+	require.NoError(t, err)
+	require.Empty(t, firstResult.Grants)
+
+	second := eventdomain.IngestCommand{
+		ID:         "evt_aggregate_overflow",
+		ProjectID:  proj.ID(),
+		PlayerID:   pl.ID(),
+		Type:       "lesson_completed",
+		OccurredAt: time.Now().Add(-time.Minute),
+	}
+	_, err = service.Process(ctx, second)
+	require.Error(t, err)
+
+	_, err = NewEventRepository(db).GetByID(ctx, proj.ID(), second.ID)
+	require.ErrorIs(t, err, eventdomain.ErrNotFound)
+
+	grants, err := NewRewardGrantRepository(db).ListByEvent(ctx, proj.ID(), second.ID)
+	require.NoError(t, err)
+	require.Empty(t, grants)
+
+	var matchCount uint64
+	require.NoError(t, db.Table("rule_match_counts").
+		Select("match_count").
+		Where(
+			"project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?",
+			proj.ID(), pl.ID(), aggregate.ID(), aggregate.Version(),
+		).
+		Scan(&matchCount).Error)
+	require.Equal(t, uint64(1), matchCount)
+
+	require.NoError(t, db.Model(&playerStateRecord{}).
+		Where("project_id = ? AND player_id = ?", proj.ID(), pl.ID()).
+		Update("xp", 0).Error)
+
+	retry, err := service.Process(ctx, second)
+	require.NoError(t, err)
+	require.False(t, retry.Duplicate)
+	require.Len(t, retry.Grants, 1)
+	require.Equal(t, int64(1), retry.State.XP())
+
+	require.NoError(t, db.Table("rule_match_counts").
+		Select("match_count").
+		Where(
+			"project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?",
+			proj.ID(), pl.ID(), aggregate.ID(), aggregate.Version(),
+		).
+		Scan(&matchCount).Error)
+	require.Equal(t, uint64(2), matchCount)
+}
+
 func TestAggregateRuleConcurrentEventsCrossThresholdOnce(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
 	ctx := context.Background()
