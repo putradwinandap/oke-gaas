@@ -28,14 +28,14 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 
 	if err := t.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(progression.Work{
-			Players:  NewPlayerRepository(tx),
-			Events:   NewEventRepository(tx),
-			Rules:    NewRuleRepository(tx),
-			Grants:   NewRewardGrantRepository(tx),
+			Players:     NewPlayerRepository(tx),
+			Events:      NewEventRepository(tx),
+			Rules:       NewRuleRepository(tx),
+			Grants:      NewRewardGrantRepository(tx),
 			Counters:    NewRuleMatchCounter(tx),
 			DailyClaims: NewRuleDailyClaimRepository(tx),
 			States:      NewPlayerStateRepository(tx),
-			Claims:   NewEventProcessingRepository(tx),
+			Claims:      NewEventProcessingRepository(tx),
 		})
 	}); err != nil {
 		return fmt.Errorf("progression transaction: %w", err)
