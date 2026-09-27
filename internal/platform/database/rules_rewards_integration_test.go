@@ -37,6 +37,7 @@ func openRulesRewardsIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000001_core.up.sql",
 		"../../../migrations/000002_events.up.sql",
 		"../../../migrations/000003_rules_rewards.up.sql",
+		"../../../migrations/000007_rule_conditions.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -161,4 +162,49 @@ func TestRewardGrantRepositoryRejectsSameEventRuleAcrossVersions(t *testing.T) {
 	require.Len(t, history, 1)
 	require.Equal(t, uint64(1), history[0].RuleVersion())
 	require.Equal(t, int64(100), history[0].Amount())
+}
+
+
+func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
+	db := openRulesRewardsIntegrationDatabase(t)
+	ctx := context.Background()
+	projects := NewProjectRepository(db)
+	rules := NewRuleRepository(db)
+
+	proj, err := project.New("Learning", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, projects.Save(ctx, proj))
+
+	value, err := ruledomain.NewConditional(
+		"rule_course",
+		proj.ID(),
+		1,
+		"lesson_completed",
+		75,
+		map[string]any{
+			"course_id":  "course_7",
+			"difficulty": 1,
+			"metadata":   map[string]any{"required": true},
+		},
+	)
+	require.NoError(t, err)
+	require.NoError(t, rules.Save(ctx, value))
+
+	current, err := rules.ListByEventType(ctx, proj.ID(), "lesson_completed")
+	require.NoError(t, err)
+	require.Len(t, current, 1)
+	require.Equal(t, value.ID(), current[0].ID())
+	require.Equal(t, value.Conditions(), current[0].Conditions())
+
+	matching, err := eventdomain.New(
+		"evt_match", proj.ID(), "player_1", "lesson_completed",
+		time.Now(), time.Now(),
+		map[string]any{
+			"course_id":  "course_7",
+			"difficulty": 1.0,
+			"metadata":   map[string]any{"required": true},
+		},
+	)
+	require.NoError(t, err)
+	require.True(t, current[0].Matches(matching))
 }
