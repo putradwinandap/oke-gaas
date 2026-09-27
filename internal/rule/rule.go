@@ -19,6 +19,7 @@ var (
 	ErrEventTypeTooLong  = errors.New("rule event type must not exceed 255 characters")
 	ErrInvalidXPAmount   = errors.New("rule xp amount must be greater than zero")
 	ErrInvalidConditions = errors.New("rule conditions must be valid JSON")
+	ErrInvalidMatchEvery = errors.New("rule match_every must be greater than zero")
 	ErrAlreadyExists     = errors.New("rule version already exists")
 )
 
@@ -31,6 +32,7 @@ type Rule struct {
 	eventType  string
 	xpAmount   int64
 	conditions map[string]any
+	matchEvery uint64
 }
 
 // New validates and creates one immutable conditionless Rule version.
@@ -41,6 +43,12 @@ func New(id, projectID string, version uint64, eventType string, xpAmount int64)
 // NewConditional validates and creates one immutable Rule version with optional
 // exact top-level property conditions. Every configured condition must match.
 func NewConditional(id, projectID string, version uint64, eventType string, xpAmount int64, conditions map[string]any) (*Rule, error) {
+	return NewAggregate(id, projectID, version, eventType, xpAmount, conditions, 1)
+}
+
+// NewAggregate validates and creates one immutable Rule version with an optional
+// count threshold. matchEvery=1 preserves immediate reward behavior.
+func NewAggregate(id, projectID string, version uint64, eventType string, xpAmount int64, conditions map[string]any, matchEvery uint64) (*Rule, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, ErrInvalidID
@@ -62,6 +70,9 @@ func NewConditional(id, projectID string, version uint64, eventType string, xpAm
 	if xpAmount <= 0 {
 		return nil, ErrInvalidXPAmount
 	}
+	if matchEvery == 0 {
+		return nil, ErrInvalidMatchEvery
+	}
 
 	normalizedConditions, err := normalizeJSONObject(conditions)
 	if err != nil {
@@ -75,12 +86,13 @@ func NewConditional(id, projectID string, version uint64, eventType string, xpAm
 		eventType:  eventType,
 		xpAmount:   xpAmount,
 		conditions: normalizedConditions,
+		matchEvery: matchEvery,
 	}, nil
 }
 
 // Restore reconstructs a persisted Rule version.
-func Restore(id, projectID string, version uint64, eventType string, xpAmount int64, conditions map[string]any) (*Rule, error) {
-	return NewConditional(id, projectID, version, eventType, xpAmount, conditions)
+func Restore(id, projectID string, version uint64, eventType string, xpAmount int64, conditions map[string]any, matchEvery uint64) (*Rule, error) {
+	return NewAggregate(id, projectID, version, eventType, xpAmount, conditions, matchEvery)
 }
 
 func (r Rule) ID() string        { return r.id }
@@ -88,6 +100,7 @@ func (r Rule) ProjectID() string { return r.projectID }
 func (r Rule) Version() uint64   { return r.version }
 func (r Rule) EventType() string { return r.eventType }
 func (r Rule) XPAmount() int64   { return r.xpAmount }
+func (r Rule) MatchEvery() uint64 { return r.matchEvery }
 
 // Conditions returns a deep copy of the exact top-level property conditions.
 func (r Rule) Conditions() map[string]any { return cloneJSONObject(r.conditions) }
