@@ -340,6 +340,17 @@ func TestRESTAggregateRuleRewardsEveryNthMatchingEvent(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	playerID := playerBody["id"].(string)
 
+	resp, invalidRule := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey,
+		map[string]any{
+			"event_type":  "lesson_completed",
+			"xp":          250,
+			"match_every": 0,
+		},
+	)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, "invalid_rule", invalidRule["error"].(map[string]any)["code"])
+
 	resp, ruleBody := requestJSON(t, app, http.MethodPost,
 		fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey,
 		map[string]any{
