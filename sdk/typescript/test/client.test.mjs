@@ -127,6 +127,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
         version: 1,
         event_type: "lesson_completed",
         xp: 100,
+        conditions: { difficulty: "hard" },
       }));
       return;
     }
@@ -151,12 +152,17 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
       externalId: "customer-9",
       createdAt: "2026-09-26T10:00:00Z",
     });
-    assert.deepEqual(await gaas.rules.create({ eventType: "lesson_completed", xp: 100 }), {
+    assert.deepEqual(await gaas.rules.create({
+      eventType: "lesson_completed",
+      xp: 100,
+      conditions: { difficulty: "hard" },
+    }), {
       id: "rule_1",
       projectId: "proj_test",
       version: 1,
       eventType: "lesson_completed",
       xp: 100,
+      conditions: { difficulty: "hard" },
     });
     assert.deepEqual(await gaas.players.get("player_123"), {
       projectId: "proj_test",
@@ -164,6 +170,12 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
       xp: 100,
       updatedAt: "2026-09-26T10:00:00Z",
     });
+  });
+
+  assert.deepEqual(requests[1].body, {
+    event_type: "lesson_completed",
+    xp: 100,
+    conditions: { difficulty: "hard" },
   });
 
   assert.deepEqual(requests.map(({ method, url }) => ({ method, url })), [
