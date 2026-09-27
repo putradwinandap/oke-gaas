@@ -126,12 +126,23 @@ func TestRuleRejectsNonJSONConditions(t *testing.T) {
 	require.Nil(t, value)
 }
 
-func TestRuleRequiresExplicitPositiveVersionAndXP(t *testing.T) {
+func TestRuleRequiresExplicitPositiveVersionXPAndAggregateThreshold(t *testing.T) {
 	_, err := New("rule_lesson", "proj_1", 0, "lesson_completed", 100)
 	require.ErrorIs(t, err, ErrInvalidVersion)
 
 	_, err = New("rule_lesson", "proj_1", 1, "lesson_completed", 0)
 	require.ErrorIs(t, err, ErrInvalidXPAmount)
+
+	_, err = NewAggregate("rule_lesson", "proj_1", 1, "lesson_completed", 100, nil, 0)
+	require.ErrorIs(t, err, ErrInvalidMatchEvery)
+
+	aggregate, err := NewAggregate("rule_lesson", "proj_1", 1, "lesson_completed", 100, nil, 5)
+	require.NoError(t, err)
+	require.Equal(t, uint64(5), aggregate.MatchEvery())
+
+	immediate, err := New("rule_immediate", "proj_1", 1, "lesson_completed", 100)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), immediate.MatchEvery())
 }
 
 func TestRuleRejectsEventTypeLongerThanPersistenceLimit(t *testing.T) {
