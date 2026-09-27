@@ -46,7 +46,8 @@ The repository includes a Docker Compose baseline that starts PostgreSQL, applie
 
 ```bash
 cp .env.example .env
-# replace all placeholder secrets before continuing
+# set POSTGRES_PASSWORD and OKE_GAAS_ADMIN_API_KEY in .env
+# Compose refuses to start while either required secret is empty
 docker compose up --build
 ```
 
