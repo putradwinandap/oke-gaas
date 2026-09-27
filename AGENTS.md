@@ -229,6 +229,7 @@ Rules:
 - production deployments must apply versioned migrations as an explicit deployment step before running code that depends on the new schema
 - the self-hosting baseline pins `migrate/migrate:v4.19.1` and must not start the API until the migration job succeeds
 - destructive or irreversible migrations require an explicit rollback/forward-fix plan
+- migrations that introduce semantics older binaries cannot interpret must fail closed on schema rollback once those semantics are active; for aggregate Rules introduced by migration 000008, a pre-000008 application binary must not run after any `match_every > 1` Rule has been created
 
 GORM model tags remain useful mapping metadata, but they are not the production migration source of truth.
 
