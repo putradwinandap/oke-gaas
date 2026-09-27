@@ -62,7 +62,7 @@ Override the host port with `OKE_GAAS_HTTP_PORT`.
 
 ## Migration operations
 
-The Compose baseline pins the migration runner to `migrate/migrate:v4.19.1` and pins all self-hosting/base images by immutable digest. Human-readable version tags remain beside the digests so upgrades are explicit and reviewable; the digest is the reproducibility boundary actually selected by the container runtime.
+The Compose baseline pins the migration runner to `migrate/migrate:v4.19.1` and pins all self-hosting/base images by immutable digest. Human-readable version tags remain beside the digests so upgrades are explicit and reviewable; the digest is the reproducibility boundary actually selected by the container runtime. The final API image also avoids package-manager network installs and uses the BusyBox tooling already contained in the pinned Alpine base for its health check.
 
 Normal deployment order:
 
