@@ -76,6 +76,12 @@ Do not edit migration files already applied to a shared environment. Add a new n
 
 If a migration fails, do not force the recorded migration version forward merely to unblock startup. Diagnose the migration, database state, and migration tool status first.
 
+### Aggregate-rule rollback boundary
+
+Migration `000008_rule_match_counts` is backward-compatible for existing immediate rules because `match_every` defaults to `1`. Once any Rule with `match_every > 1` has been created, however, **do not roll the application binary back to a pre-000008 version**: older binaries do not understand aggregate thresholds and would evaluate those Rules as immediate XP Rules.
+
+The `000008` down migration therefore fails closed while aggregate Rules exist. If aggregate behavior has been activated, recover with a forward-fix or restore a verified backup from before aggregate Rules were created. Do not delete aggregate Rules or their counters merely to force a rollback.
+
 ## Backup
 
 The PostgreSQL volume is persistent, but a volume is not a backup.

@@ -32,7 +32,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"project_api_keys", "event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	for _, table := range []string{"project_api_keys", "event_processing", "rule_match_counts", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -42,6 +42,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000004_player_state.up.sql",
 		"../../../migrations/000005_event_processing.up.sql",
 		"../../../migrations/000007_rule_conditions.up.sql",
+		"../../../migrations/000008_rule_match_counts.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -67,6 +68,124 @@ func seedProgressionFixture(t *testing.T, db *gorm.DB, xpAmount int64) (*project
 	require.NoError(t, NewRuleRepository(db).Save(ctx, rule))
 
 	return proj, pl
+}
+
+type aggregateCounterCoordinator struct {
+	mu           sync.Mutex
+	calls        int
+	firstLocked  chan struct{}
+	releaseFirst chan struct{}
+	firstPID     chan int
+	secondPID    chan int
+	counts       chan uint64
+}
+
+func newAggregateCounterCoordinator() *aggregateCounterCoordinator {
+	return &aggregateCounterCoordinator{
+		firstLocked:  make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		firstPID:     make(chan int, 1),
+		secondPID:    make(chan int, 1),
+		counts:       make(chan uint64, 2),
+	}
+}
+
+func (c *aggregateCounterCoordinator) nextCall() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls++
+	return c.calls
+}
+
+type coordinatedAggregateCounter struct {
+	base        *RuleMatchCounter
+	coordinator *aggregateCounterCoordinator
+}
+
+func (c *coordinatedAggregateCounter) Increment(
+	ctx context.Context,
+	projectID, playerID, ruleID string,
+	ruleVersion uint64,
+	matchedAt time.Time,
+) (uint64, error) {
+	call := c.coordinator.nextCall()
+	if call == 1 {
+		count, err := c.base.Increment(ctx, projectID, playerID, ruleID, ruleVersion, matchedAt)
+		if err != nil {
+			close(c.coordinator.firstLocked)
+			return 0, err
+		}
+
+		var backendPID int
+		if err := c.base.db.WithContext(ctx).Raw("SELECT pg_backend_pid()").Scan(&backendPID).Error; err != nil {
+			close(c.coordinator.firstLocked)
+			return 0, err
+		}
+		c.coordinator.firstPID <- backendPID
+		c.coordinator.counts <- count
+		close(c.coordinator.firstLocked)
+		select {
+		case <-c.coordinator.releaseFirst:
+			return count, nil
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+
+	if call == 2 {
+		select {
+		case <-c.coordinator.firstLocked:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+
+		var backendPID int
+		if err := c.base.db.WithContext(ctx).Raw("SELECT pg_backend_pid()").Scan(&backendPID).Error; err != nil {
+			return 0, err
+		}
+		select {
+		case c.coordinator.secondPID <- backendPID:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+
+		count, err := c.base.Increment(ctx, projectID, playerID, ruleID, ruleVersion, matchedAt)
+		if err == nil {
+			c.coordinator.counts <- count
+		}
+		return count, err
+	}
+
+	count, err := c.base.Increment(ctx, projectID, playerID, ruleID, ruleVersion, matchedAt)
+	if err == nil {
+		c.coordinator.counts <- count
+	}
+	return count, err
+}
+
+type coordinatedProgressionTransactor struct {
+	db          *gorm.DB
+	coordinator *aggregateCounterCoordinator
+}
+
+func (t *coordinatedProgressionTransactor) WithinTransaction(
+	ctx context.Context,
+	fn func(progression.Work) error,
+) error {
+	return t.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(progression.Work{
+			Players: NewPlayerRepository(tx),
+			Events:  NewEventRepository(tx),
+			Rules:   NewRuleRepository(tx),
+			Grants:  NewRewardGrantRepository(tx),
+			Counters: &coordinatedAggregateCounter{
+				base:        NewRuleMatchCounter(tx),
+				coordinator: t.coordinator,
+			},
+			States: NewPlayerStateRepository(tx),
+			Claims: NewEventProcessingRepository(tx),
+		})
+	})
 }
 
 func TestProgressionTransactionIsIdempotentAndMaterializesXP(t *testing.T) {
@@ -318,7 +437,7 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"project_api_keys", "event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	for _, table := range []string{"project_api_keys", "event_processing", "rule_match_counts", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -387,4 +506,259 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 		Where("project_id = ? AND event_id = ?", proj.ID(), ev.ID()).
 		Count(&claimCount).Error)
 	require.Equal(t, int64(1), claimCount)
+}
+
+func TestAggregateCounterRollsBackWhenPlayerStateUpdateFails(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+
+	proj, err := project.New("Aggregate Rollback", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+
+	pl, err := player.New(proj.ID(), "aggregate-rollback-player", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, pl))
+
+	aggregate, err := ruledomain.NewAggregate(
+		"rule_aggregate_rollback",
+		proj.ID(),
+		1,
+		"lesson_completed",
+		1,
+		nil,
+		2,
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, aggregate))
+
+	states := NewPlayerStateRepository(db)
+	_, err = states.AddXP(ctx, proj.ID(), pl.ID(), int64(^uint64(0)>>1), time.Now())
+	require.NoError(t, err)
+
+	service := progression.NewService(NewProgressionTransactor(db))
+	first := eventdomain.IngestCommand{
+		ID:         "evt_aggregate_first",
+		ProjectID:  proj.ID(),
+		PlayerID:   pl.ID(),
+		Type:       "lesson_completed",
+		OccurredAt: time.Now().Add(-2 * time.Minute),
+	}
+	firstResult, err := service.Process(ctx, first)
+	require.NoError(t, err)
+	require.Empty(t, firstResult.Grants)
+
+	second := eventdomain.IngestCommand{
+		ID:         "evt_aggregate_overflow",
+		ProjectID:  proj.ID(),
+		PlayerID:   pl.ID(),
+		Type:       "lesson_completed",
+		OccurredAt: time.Now().Add(-time.Minute),
+	}
+	_, err = service.Process(ctx, second)
+	require.Error(t, err)
+
+	_, err = NewEventRepository(db).GetByID(ctx, proj.ID(), second.ID)
+	require.ErrorIs(t, err, eventdomain.ErrNotFound)
+
+	grants, err := NewRewardGrantRepository(db).ListByEvent(ctx, proj.ID(), second.ID)
+	require.NoError(t, err)
+	require.Empty(t, grants)
+
+	var matchCount uint64
+	require.NoError(t, db.Table("rule_match_counts").
+		Select("match_count").
+		Where(
+			"project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?",
+			proj.ID(), pl.ID(), aggregate.ID(), aggregate.Version(),
+		).
+		Scan(&matchCount).Error)
+	require.Equal(t, uint64(1), matchCount)
+
+	require.NoError(t, db.Model(&playerStateRecord{}).
+		Where("project_id = ? AND player_id = ?", proj.ID(), pl.ID()).
+		Update("xp", 0).Error)
+
+	retry, err := service.Process(ctx, second)
+	require.NoError(t, err)
+	require.False(t, retry.Duplicate)
+	require.Len(t, retry.Grants, 1)
+	require.Equal(t, int64(1), retry.State.XP())
+
+	require.NoError(t, db.Table("rule_match_counts").
+		Select("match_count").
+		Where(
+			"project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?",
+			proj.ID(), pl.ID(), aggregate.ID(), aggregate.Version(),
+		).
+		Scan(&matchCount).Error)
+	require.Equal(t, uint64(2), matchCount)
+}
+
+func TestAggregateRuleConcurrentEventsCrossThresholdOnce(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+
+	proj, err := project.New("Aggregate Learning", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+
+	pl, err := player.New(proj.ID(), "aggregate-player", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, pl))
+
+	aggregate, err := ruledomain.NewAggregate(
+		"rule_aggregate",
+		proj.ID(),
+		1,
+		"lesson_completed",
+		100,
+		nil,
+		2,
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, aggregate))
+
+	_, err = NewPlayerStateRepository(db).Ensure(ctx, proj.ID(), pl.ID(), time.Now())
+	require.NoError(t, err)
+
+	coordinator := newAggregateCounterCoordinator()
+	service := progression.NewService(&coordinatedProgressionTransactor{
+		db:          db,
+		coordinator: coordinator,
+	})
+	commands := []eventdomain.IngestCommand{
+		{
+			ID:         "evt_aggregate_a",
+			ProjectID:  proj.ID(),
+			PlayerID:   pl.ID(),
+			Type:       "lesson_completed",
+			OccurredAt: time.Now().Add(-2 * time.Minute),
+		},
+		{
+			ID:         "evt_aggregate_b",
+			ProjectID:  proj.ID(),
+			PlayerID:   pl.ID(),
+			Type:       "lesson_completed",
+			OccurredAt: time.Now().Add(-time.Minute),
+		},
+	}
+
+	results := make(chan *progression.ProcessResult, len(commands))
+	errs := make(chan error, len(commands))
+	var wg sync.WaitGroup
+	wg.Add(len(commands))
+	for _, command := range commands {
+		command := command
+		go func() {
+			defer wg.Done()
+			result, err := service.Process(ctx, command)
+			results <- result
+			errs <- err
+		}()
+	}
+
+	var firstPID int
+	select {
+	case firstPID = <-coordinator.firstPID:
+	case <-time.After(5 * time.Second):
+		close(coordinator.releaseFirst)
+		require.FailNow(t, "first aggregate transaction did not lock the shared counter")
+	}
+
+	var secondPID int
+	select {
+	case secondPID = <-coordinator.secondPID:
+	case <-time.After(5 * time.Second):
+		close(coordinator.releaseFirst)
+		require.FailNow(t, "second aggregate transaction did not reach the shared counter")
+	}
+
+	blocked := false
+	deadline := time.Now().Add(5 * time.Second)
+	for !blocked && time.Now().Before(deadline) {
+		require.NoError(t, db.Raw(
+			"SELECT ? = ANY(pg_blocking_pids(?))",
+			firstPID,
+			secondPID,
+		).Scan(&blocked).Error)
+		if !blocked {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	close(coordinator.releaseFirst)
+	require.True(t, blocked, "second aggregate transaction never blocked on the first counter update")
+
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	counts := []uint64{<-coordinator.counts, <-coordinator.counts}
+	require.ElementsMatch(t, []uint64{1, 2}, counts)
+
+	var granted int
+	for result := range results {
+		require.NotNil(t, result)
+		granted += len(result.Grants)
+	}
+	require.Equal(t, 1, granted)
+
+	state, err := NewPlayerStateRepository(db).Get(ctx, proj.ID(), pl.ID())
+	require.NoError(t, err)
+	require.Equal(t, int64(100), state.XP())
+
+	var matchCount uint64
+	require.NoError(t, db.Table("rule_match_counts").
+		Select("match_count").
+		Where(
+			"project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?",
+			proj.ID(), pl.ID(), aggregate.ID(), aggregate.Version(),
+		).
+		Scan(&matchCount).Error)
+	require.Equal(t, uint64(2), matchCount)
+
+	var grantCount int64
+	require.NoError(t, db.Table("reward_grants").
+		Where("project_id = ? AND player_id = ? AND rule_id = ?", proj.ID(), pl.ID(), aggregate.ID()).
+		Count(&grantCount).Error)
+	require.Equal(t, int64(1), grantCount)
+}
+
+func TestRuleMatchCounterRejectsCrossProjectScope(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+
+	projectA, err := project.New("Project A", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, projectA))
+
+	projectB, err := project.New("Project B", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, projectB))
+
+	playerA, err := player.New(projectA.ID(), "player-a", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, playerA))
+
+	ruleA, err := ruledomain.NewAggregate("rule_a", projectA.ID(), 1, "lesson_completed", 100, nil, 2)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, ruleA))
+
+	_, err = NewRuleMatchCounter(db).Increment(
+		ctx,
+		projectB.ID(),
+		playerA.ID(),
+		ruleA.ID(),
+		ruleA.Version(),
+		time.Now(),
+	)
+	require.Error(t, err)
+
+	var count int64
+	require.NoError(t, db.Table("rule_match_counts").Count(&count).Error)
+	require.Zero(t, count)
 }

@@ -128,6 +128,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
         event_type: "lesson_completed",
         xp: 100,
         conditions: { difficulty: "hard" },
+        match_every: 3,
       }));
       return;
     }
@@ -156,6 +157,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
       eventType: "lesson_completed",
       xp: 100,
       conditions: { difficulty: "hard" },
+      matchEvery: 3,
     }), {
       id: "rule_1",
       projectId: "proj_test",
@@ -163,6 +165,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
       eventType: "lesson_completed",
       xp: 100,
       conditions: { difficulty: "hard" },
+      matchEvery: 3,
     });
     assert.deepEqual(await gaas.players.get("player_123"), {
       projectId: "proj_test",
@@ -176,6 +179,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
     event_type: "lesson_completed",
     xp: 100,
     conditions: { difficulty: "hard" },
+    match_every: 3,
   });
 
   assert.deepEqual(requests.map(({ method, url }) => ({ method, url })), [
@@ -183,6 +187,31 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
     { method: "POST", url: "/v1/projects/proj_test/rules" },
     { method: "GET", url: "/v1/projects/proj_test/players/player_123/state" },
   ]);
+});
+
+test("rules default matchEvery to one and reject invalid thresholds", async () => {
+  await withServer(async (request, response) => {
+    const body = await readJson(request);
+    assert.equal(body.match_every, 1);
+    response.writeHead(201, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      id: "rule_default",
+      project_id: "proj_test",
+      version: 1,
+      event_type: "daily_login",
+      xp: 10,
+      conditions: {},
+      match_every: 1,
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
+    const result = await gaas.rules.create({ eventType: "daily_login", xp: 10 });
+    assert.equal(result.matchEvery, 1);
+    await assert.rejects(
+      () => gaas.rules.create({ eventType: "daily_login", xp: 10, matchEvery: 0 }),
+      /matchEvery/,
+    );
+  });
 });
 
 test("API error envelopes become GaasError without exposing unrelated response data", async () => {

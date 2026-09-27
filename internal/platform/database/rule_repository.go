@@ -17,6 +17,7 @@ type ruleRecord struct {
 	EventType  string `gorm:"type:varchar(255);not null;index"`
 	XPAmount   int64  `gorm:"not null"`
 	Conditions []byte `gorm:"type:jsonb;not null;default:'{}'"`
+	MatchEvery uint64 `gorm:"not null;default:1"`
 }
 
 func (ruleRecord) TableName() string { return "rules" }
@@ -37,6 +38,7 @@ func (r *RuleRepository) Save(ctx context.Context, value *ruledomain.Rule) error
 		EventType:  value.EventType(),
 		XPAmount:   value.XPAmount(),
 		Conditions: conditions,
+		MatchEvery: value.MatchEvery(),
 	}
 	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
 		mapped := mapPersistenceError(err)
@@ -52,7 +54,7 @@ func (r *RuleRepository) Save(ctx context.Context, value *ruledomain.Rule) error
 func (r *RuleRepository) ListByEventType(ctx context.Context, projectID, eventType string) ([]*ruledomain.Rule, error) {
 	var records []ruleRecord
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT project_id, id, version, event_type, xp_amount, conditions
+		SELECT project_id, id, version, event_type, xp_amount, conditions, match_every
 		FROM (
 			SELECT
 				project_id,
@@ -61,6 +63,7 @@ func (r *RuleRepository) ListByEventType(ctx context.Context, projectID, eventTy
 				event_type,
 				xp_amount,
 				conditions,
+				match_every,
 				ROW_NUMBER() OVER (
 					PARTITION BY project_id, id
 					ORDER BY version DESC
@@ -85,7 +88,7 @@ func (r *RuleRepository) ListByEventType(ctx context.Context, projectID, eventTy
 				return nil, fmt.Errorf("decode rule %s version %d conditions: %w", record.ID, record.Version, err)
 			}
 		}
-		value, err := ruledomain.Restore(record.ID, record.ProjectID, record.Version, record.EventType, record.XPAmount, conditions)
+		value, err := ruledomain.Restore(record.ID, record.ProjectID, record.Version, record.EventType, record.XPAmount, conditions, record.MatchEvery)
 		if err != nil {
 			return nil, fmt.Errorf("restore rule %s version %d: %w", record.ID, record.Version, err)
 		}

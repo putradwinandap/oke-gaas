@@ -113,4 +113,21 @@ await gaas.rules.create({
 });
 ```
 
-Every configured condition must match. Nested property paths, comparison operators, aggregates, and a general rule DSL are intentionally not supported yet.
+Every configured condition must match. Nested property paths and comparison operators are intentionally not supported yet.
+
+### Count-based aggregate XP rules
+
+Use `matchEvery` when a reward should fire on every Nth matching Event for each Player:
+
+```ts
+await gaas.rules.create({
+  eventType: "lesson_completed",
+  xp: 250,
+  conditions: {
+    course_id: "course_7",
+  },
+  matchEvery: 5,
+});
+```
+
+Omitting `matchEvery` defaults to `1`, preserving immediate rewards. Counting and threshold evaluation remain server responsibilities; the SDK only sends the configuration. Time windows, arbitrary aggregate expressions, and a general rule DSL are intentionally not supported.

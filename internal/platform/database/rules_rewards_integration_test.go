@@ -30,7 +30,7 @@ func openRulesRewardsIntegrationDatabase(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"project_api_keys", "event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	for _, table := range []string{"project_api_keys", "event_processing", "rule_match_counts", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -38,6 +38,7 @@ func openRulesRewardsIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000002_events.up.sql",
 		"../../../migrations/000003_rules_rewards.up.sql",
 		"../../../migrations/000007_rule_conditions.up.sql",
+		"../../../migrations/000008_rule_match_counts.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -174,7 +175,7 @@ func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, projects.Save(ctx, proj))
 
-	value, err := ruledomain.NewConditional(
+	value, err := ruledomain.NewAggregate(
 		"rule_course",
 		proj.ID(),
 		1,
@@ -185,6 +186,7 @@ func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
 			"difficulty": 1,
 			"metadata":   map[string]any{"required": true},
 		},
+		4,
 	)
 	require.NoError(t, err)
 	require.NoError(t, rules.Save(ctx, value))
@@ -194,6 +196,7 @@ func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
 	require.Len(t, current, 1)
 	require.Equal(t, value.ID(), current[0].ID())
 	require.Equal(t, value.Conditions(), current[0].Conditions())
+	require.Equal(t, uint64(4), current[0].MatchEvery())
 
 	matching, err := eventdomain.New(
 		"evt_match", proj.ID(), "player_1", "lesson_completed",
@@ -206,4 +209,63 @@ func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, current[0].Matches(matching))
+}
+
+func TestAggregateMigrationRollbackFailsClosedWhenAggregateRulesExist(t *testing.T) {
+	db := openRulesRewardsIntegrationDatabase(t)
+	ctx := context.Background()
+
+	proj, err := project.New("Rollback Safety", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+
+	aggregate, err := ruledomain.NewAggregate(
+		"rule_rollback_guard",
+		proj.ID(),
+		1,
+		"lesson_completed",
+		100,
+		nil,
+		2,
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, aggregate))
+
+	downSQL, err := os.ReadFile("../../../migrations/000008_rule_match_counts.down.sql")
+	require.NoError(t, err)
+
+	err = db.Exec(string(downSQL)).Error
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot roll back migration 000008 while aggregate rules exist")
+
+	current, err := NewRuleRepository(db).ListByEventType(ctx, proj.ID(), "lesson_completed")
+	require.NoError(t, err)
+	require.Len(t, current, 1)
+	require.Equal(t, uint64(2), current[0].MatchEvery())
+
+	require.NoError(t, db.Exec(
+		"DELETE FROM rules WHERE project_id = ? AND id = ? AND version = ?",
+		proj.ID(),
+		aggregate.ID(),
+		aggregate.Version(),
+	).Error)
+	require.NoError(t, db.Exec(string(downSQL)).Error)
+
+	var matchEveryColumnExists bool
+	require.NoError(t, db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'rules'
+			  AND column_name = 'match_every'
+		)
+	`).Scan(&matchEveryColumnExists).Error)
+	require.False(t, matchEveryColumnExists)
+
+	var matchCountTableExists bool
+	require.NoError(t, db.Raw(
+		"SELECT to_regclass(current_schema() || '.rule_match_counts') IS NOT NULL",
+	).Scan(&matchCountTableExists).Error)
+	require.False(t, matchCountTableExists)
 }
