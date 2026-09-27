@@ -7,14 +7,18 @@ POSTGRES_PASSWORD_VALUE="${POSTGRES_PASSWORD:-ci-database-password-0123456789abc
 ADMIN_API_KEY_VALUE="${OKE_GAAS_ADMIN_API_KEY:-ci-admin-api-key-0123456789abcdef}"
 HTTP_PORT_VALUE="${OKE_GAAS_HTTP_PORT:-18080}"
 
-if ! grep -qx 'POSTGRES_PASSWORD=' .env.example; then
-  echo ".env.example must keep POSTGRES_PASSWORD blank"
-  exit 1
-fi
-if ! grep -qx 'OKE_GAAS_ADMIN_API_KEY=' .env.example; then
-  echo ".env.example must keep OKE_GAAS_ADMIN_API_KEY blank"
-  exit 1
-fi
+assert_example_secret_blank() {
+  key="$1"
+  expected="${key}="
+  actual="$(grep "^${key}=" .env.example || true)"
+  if [ "$actual" != "$expected" ]; then
+    echo ".env.example must define ${key} exactly once and keep it blank"
+    exit 1
+  fi
+}
+
+assert_example_secret_blank POSTGRES_PASSWORD
+assert_example_secret_blank OKE_GAAS_ADMIN_API_KEY
 
 if POSTGRES_DB="$POSTGRES_DB_VALUE" \
   POSTGRES_USER="$POSTGRES_USER_VALUE" \
