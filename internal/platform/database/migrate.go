@@ -17,6 +17,7 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&eventRecord{},
 		&ruleRecord{},
 		&ruleMatchCountRecord{},
+		&ruleDailyClaimRecord{},
 		&rewardGrantRecord{},
 		&playerStateRecord{},
 		&eventProcessingRecord{},
@@ -143,6 +144,30 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 			statement: `
 				ALTER TABLE rule_match_counts
 				ADD CONSTRAINT fk_rule_match_counts_rule_version
+				FOREIGN KEY (project_id, rule_id, rule_version)
+				REFERENCES rules(project_id, id, version)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "rule_daily_claims",
+			name:  "fk_rule_daily_claims_player_project",
+			statement: `
+				ALTER TABLE rule_daily_claims
+				ADD CONSTRAINT fk_rule_daily_claims_player_project
+				FOREIGN KEY (project_id, player_id)
+				REFERENCES players(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "rule_daily_claims",
+			name:  "fk_rule_daily_claims_rule_version",
+			statement: `
+				ALTER TABLE rule_daily_claims
+				ADD CONSTRAINT fk_rule_daily_claims_rule_version
 				FOREIGN KEY (project_id, rule_id, rule_version)
 				REFERENCES rules(project_id, id, version)
 				ON UPDATE RESTRICT
