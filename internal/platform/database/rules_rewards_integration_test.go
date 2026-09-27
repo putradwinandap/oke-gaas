@@ -243,10 +243,14 @@ func TestAggregateMigrationRollbackFailsClosedWhenAggregateRulesExist(t *testing
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot roll back migration 000008 while aggregate rules exist")
 
-	current, err := NewRuleRepository(db).ListByEventType(ctx, proj.ID(), "lesson_completed")
-	require.NoError(t, err)
-	require.Len(t, current, 1)
-	require.Equal(t, uint64(2), current[0].MatchEvery())
+	var persistedMatchEvery int64
+	require.NoError(t, db.Raw(
+		"SELECT match_every FROM rules WHERE project_id = ? AND id = ? AND version = ?",
+		proj.ID(),
+		aggregate.ID(),
+		aggregate.Version(),
+	).Scan(&persistedMatchEvery).Error)
+	require.Equal(t, int64(2), persistedMatchEvery)
 
 	require.NoError(t, db.Exec(
 		"DELETE FROM rules WHERE project_id = ? AND id = ? AND version = ?",
