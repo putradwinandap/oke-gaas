@@ -27,6 +27,7 @@ export interface Player {
 export interface CreateRuleInput {
   eventType: string;
   xp: number;
+  conditions?: Record<string, unknown>;
 }
 
 export interface Rule {
@@ -35,6 +36,7 @@ export interface Rule {
   version: number;
   eventType: string;
   xp: number;
+  conditions: Record<string, unknown>;
 }
 
 export interface TrackInput {
@@ -92,6 +94,7 @@ interface ApiRule {
   version: number;
   event_type: string;
   xp: number;
+  conditions: Record<string, unknown>;
 }
 
 interface ApiRewardGrant {
@@ -321,7 +324,7 @@ export function createGaas(config: GaasConfig): GaasClient {
           `${projectPath}/rules`,
           {
             method: "POST",
-            body: stringifyJson({ event_type: eventType, xp }),
+            body: stringifyJson({ event_type: eventType, xp, conditions: input.conditions ?? {} }),
           },
           options,
         );
@@ -335,6 +338,7 @@ export function createGaas(config: GaasConfig): GaasClient {
           version: value.version,
           eventType: value.event_type,
           xp: value.xp,
+          conditions: value.conditions,
         };
       },
     },
@@ -501,7 +505,8 @@ function isApiRule(value: unknown): value is ApiRule {
     && typeof value.project_id === "string"
     && isPositiveSafeInteger(value.version)
     && typeof value.event_type === "string"
-    && isPositiveSafeInteger(value.xp);
+    && isPositiveSafeInteger(value.xp)
+    && isRecord(value.conditions);
 }
 
 function isApiRewardGrant(value: unknown): value is ApiRewardGrant {
