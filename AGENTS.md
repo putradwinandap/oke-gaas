@@ -133,7 +133,7 @@ internal/access/             Project API-key authentication boundary + repositor
 internal/project/            Project domain + application service + repository interface
 internal/player/             Player domain + application service + repository interface
 internal/event/              External Event domain + idempotent ingestion service + repository interface
-internal/rule/               Versioned exact-event XP Rule domain with optional exact top-level property conditions and count thresholds + repository interface
+internal/rule/               Versioned exact-event XP Rule domain with optional exact top-level property conditions, count thresholds, and once-per-UTC-day gating + repository interface
 internal/reward/             Auditable XP Reward Grant domain + evaluation service + repository interface
 internal/progression/          Materialized Player State + transactional Event -> Reward -> State orchestration
 internal/platform/database/  GORM/PostgreSQL records, queries, transactions, and migrations
@@ -229,7 +229,7 @@ Rules:
 - production deployments must apply versioned migrations as an explicit deployment step before running code that depends on the new schema
 - the self-hosting baseline pins `migrate/migrate:v4.19.1` and must not start the API until the migration job succeeds
 - destructive or irreversible migrations require an explicit rollback/forward-fix plan
-- migrations that introduce semantics older binaries cannot interpret must fail closed on schema rollback once those semantics are active; for aggregate Rules introduced by migration 000008, a pre-000008 application binary must not run after any `match_every > 1` Rule has been created
+- migrations that introduce semantics older binaries cannot interpret must fail closed on schema rollback once those semantics are active; for aggregate Rules introduced by migration 000008, a pre-000008 application binary must not run after any `match_every > 1` Rule has been created; for once-per-UTC-day Rules introduced by migration 000009, a pre-000009 application binary must not run after any `once_per_utc_day = true` Rule has been created
 
 GORM model tags remain useful mapping metadata, but they are not the production migration source of truth.
 
@@ -331,6 +331,7 @@ This includes, where applicable:
 - rules
 - reward grants
 - aggregate rule progress
+- time-aware rule claims
 - leaderboards
 - achievements
 - webhooks
@@ -445,7 +446,9 @@ Rules may optionally require exact matches on top-level Event properties. Every 
 
 The first aggregate rule capability is intentionally narrow: a Rule may define `match_every = N` and grant XP on every Nth Event that already matches that exact Rule version's event type and property conditions for one Player. `match_every = 1` preserves immediate reward behavior. Aggregate progress is scoped by Project + Player + Rule identity + Rule version, persisted in `rule_match_counts`, and incremented atomically inside the same PostgreSQL transaction as Event processing, Reward Grants, and Player State. Duplicate Event retries must not advance aggregate progress twice, and concurrent distinct matching Events must serialize their counter increments so a threshold is granted at most once.
 
-Nested property paths, comparison operators, time windows, arbitrary aggregate expressions, advanced compositions, and a general DSL remain out of scope until concrete use cases justify them.
+The first time-aware rule capability is also intentionally narrow: an immediate XP Rule may set `once_per_utc_day = true` to grant at most once for one Player on each UTC calendar day. The day is derived from the Event's normalized `occurred_at`, not server receipt time. Claims are scoped by Project + Player + Rule identity + Rule version + UTC day, persisted in `rule_daily_claims`, and created atomically inside the same transaction as Event processing, Reward Grants, and Player State. Concurrent distinct same-day Events must therefore produce at most one grant, while the next UTC day may grant again. This first slice does not compose daily gating with count thresholds: `once_per_utc_day = true` requires `match_every = 1`.
+
+Nested property paths, comparison operators, custom time zones, rolling windows, arbitrary schedules, streak state, arbitrary aggregate expressions, advanced compositions, and a general DSL remain out of scope until concrete use cases justify them.
 
 At minimum, reward history should be able to identify:
 
