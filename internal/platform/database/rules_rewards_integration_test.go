@@ -275,7 +275,6 @@ func TestAggregateMigrationRollbackFailsClosedWhenAggregateRulesExist(t *testing
 	require.False(t, matchCountTableExists)
 }
 
-
 func TestDailyRuleMigrationRollbackFailsClosedWhenDailyRulesExist(t *testing.T) {
 	db := openRulesRewardsIntegrationDatabase(t)
 	ctx := context.Background()
