@@ -96,3 +96,21 @@ Successful API responses are runtime-validated before mapping. Integer XP/reward
 npm install
 npm run check
 ```
+
+
+### Conditional XP rules
+
+Rules may optionally require exact matches on top-level event properties:
+
+```ts
+await gaas.rules.create({
+  eventType: "lesson_completed",
+  xp: 100,
+  conditions: {
+    course_id: "course_7",
+    difficulty: "hard",
+  },
+});
+```
+
+Every configured condition must match. Nested property paths, comparison operators, aggregates, and a general rule DSL are intentionally not supported yet.

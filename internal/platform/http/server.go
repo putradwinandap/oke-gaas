@@ -115,16 +115,17 @@ func New(dependencies ...Dependencies) *fiber.App {
 			return nil
 		}
 		var request struct {
-			EventType string `json:"event_type"`
-			XP        int64  `json:"xp"`
+			EventType  string         `json:"event_type"`
+			XP         int64          `json:"xp"`
+			Conditions map[string]any `json:"conditions"`
 		}
 		if err := c.Bind().Body(&request); err != nil {
 			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
 		}
-		value, err := deps.Rules.CreateExactXP(ctx, projectID, request.EventType, request.XP)
+		value, err := deps.Rules.CreateXP(ctx, projectID, request.EventType, request.XP, request.Conditions)
 		if err != nil {
 			switch {
-			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrEventTypeTooLong), errors.Is(err, rule.ErrInvalidXPAmount):
+			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrEventTypeTooLong), errors.Is(err, rule.ErrInvalidXPAmount), errors.Is(err, rule.ErrInvalidConditions):
 				return writeError(c, fiber.StatusBadRequest, "invalid_rule", err.Error())
 			case errors.Is(err, project.ErrNotFound):
 				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
@@ -138,6 +139,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 			"version":    value.Version(),
 			"event_type": value.EventType(),
 			"xp":         value.XPAmount(),
+			"conditions": value.Conditions(),
 		})
 	})
 
