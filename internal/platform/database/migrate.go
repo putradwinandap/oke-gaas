@@ -19,6 +19,7 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&ruleMatchCountRecord{},
 		&ruleDailyClaimRecord{},
 		&rewardGrantRecord{},
+		&levelThresholdRecord{},
 		&playerStateRecord{},
 		&eventProcessingRecord{},
 	); err != nil {
@@ -98,6 +99,18 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 				ADD CONSTRAINT fk_reward_grants_player_project
 				FOREIGN KEY (project_id, player_id)
 				REFERENCES players(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "level_thresholds",
+			name:  "fk_level_thresholds_project",
+			statement: `
+				ALTER TABLE level_thresholds
+				ADD CONSTRAINT fk_level_thresholds_project
+				FOREIGN KEY (project_id)
+				REFERENCES projects(id)
 				ON UPDATE RESTRICT
 				ON DELETE RESTRICT
 			`,
