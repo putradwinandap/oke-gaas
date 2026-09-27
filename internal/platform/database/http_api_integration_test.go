@@ -41,6 +41,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 	for _, table := range []string{
 		"project_api_keys",
 		"event_processing",
+		"rule_match_counts",
 		"player_states",
 		"reward_grants",
 		"rules",
@@ -58,6 +59,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000005_event_processing.up.sql",
 		"../../../migrations/000006_project_api_keys.up.sql",
 		"../../../migrations/000007_rule_conditions.up.sql",
+		"../../../migrations/000008_rule_match_counts.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
