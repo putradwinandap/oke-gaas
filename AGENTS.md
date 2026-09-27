@@ -875,6 +875,7 @@ The initial self-hosting deployment is Docker Compose with one PostgreSQL servic
 Operational rules:
 
 - the API image must run as a non-root user
+- self-hosting/base container images must use explicit human-readable versions plus immutable digests; floating tags are not sufficient for the reproducible baseline
 - no real secret may be committed to the repository or baked into the image
 - connection-string components must be encoded safely; the Compose baseline therefore requires a long URL-unreserved PostgreSQL password because it interpolates that secret into PostgreSQL URIs
 - PostgreSQL data must live on persistent storage, but persistent storage is not a substitute for backups
@@ -882,6 +883,8 @@ Operational rules:
 - the API process must not run GORM `AutoMigrate`
 - backup and restore procedures must be documented and periodically testable
 - restore into an active database is destructive and requires stopping writes plus preserving a verified pre-restore backup
+- the checked-in environment example must not contain a usable operator/database secret; required Compose secrets must fail closed when unset or empty
+- gated CI must exercise Compose rendering, image build, migration-before-API startup, API health, non-root runtime, and one authenticated persistence-backed request
 - Compose is a self-hosting baseline, not a complete internet-facing production platform; TLS, secret management, resource policy, monitored backups, and observability require explicit deployment decisions
 
 See `docs/operations/self-hosting.md`.
