@@ -137,9 +137,9 @@ func New(dependencies ...Dependencies) *fiber.App {
 			"id":         value.ID(),
 			"project_id": value.ProjectID(),
 			"version":    value.Version(),
-			"event_type":  value.EventType(),
-			"xp":          value.XPAmount(),
-			"conditions":  value.Conditions(),
+			"event_type": value.EventType(),
+			"xp":         value.XPAmount(),
+			"conditions": value.Conditions(),
 		})
 	})
 
