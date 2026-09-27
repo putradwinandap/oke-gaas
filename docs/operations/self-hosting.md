@@ -88,6 +88,12 @@ Migration `000009_rule_daily_claims` adds `once_per_utc_day` and the `rule_daily
 
 The `000009` down migration therefore fails closed while daily Rules exist. If daily behavior has been activated, recover with a forward-fix or restore a verified backup from before daily Rules were created. Schema downgrades must be applied in reverse migration order: `000009` must be removed before attempting to remove `000008`.
 
+### XP-level rollback boundary
+
+Migration `000010_level_thresholds` adds Project-scoped Level configuration. Level resolution is derived from XP and does not alter Reward processing, so an older application binary cannot over-grant XP merely by ignoring this table. However, dropping the schema would destroy configured Level ladders and break clients that depend on Level responses.
+
+The `000010` down migration therefore fails closed while any Level thresholds are configured. Prefer a forward-fix; otherwise restore a verified backup from before Level thresholds were created. Do not delete configured thresholds merely to force a rollback. Schema downgrades must remain in reverse migration order: `000010` before `000009`.
+
 ## Backup
 
 The PostgreSQL volume is persistent, but a volume is not a backup.
