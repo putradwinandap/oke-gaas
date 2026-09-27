@@ -32,7 +32,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"project_api_keys", "event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	for _, table := range []string{"project_api_keys", "event_processing", "rule_match_counts", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -42,6 +42,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000004_player_state.up.sql",
 		"../../../migrations/000005_event_processing.up.sql",
 		"../../../migrations/000007_rule_conditions.up.sql",
+		"../../../migrations/000008_rule_match_counts.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -318,7 +319,7 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	for _, table := range []string{"project_api_keys", "event_processing", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	for _, table := range []string{"project_api_keys", "event_processing", "rule_match_counts", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
