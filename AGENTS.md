@@ -227,7 +227,7 @@ Rules:
 - local development and tests may use `AutoMigrateCoreForDevelopment` for convenience
 - production startup must not call GORM `AutoMigrate`
 - production deployments must apply versioned migrations as an explicit deployment step before running code that depends on the new schema
-- the self-hosting baseline pins `migrate/migrate:v4.19.0` and must not start the API until the migration job succeeds
+- the self-hosting baseline pins `migrate/migrate:v4.19.1` and must not start the API until the migration job succeeds
 - destructive or irreversible migrations require an explicit rollback/forward-fix plan
 
 GORM model tags remain useful mapping metadata, but they are not the production migration source of truth.
@@ -876,6 +876,7 @@ Operational rules:
 
 - the API image must run as a non-root user
 - no real secret may be committed to the repository or baked into the image
+- connection-string components must be encoded safely; the Compose baseline therefore requires a long URL-unreserved PostgreSQL password because it interpolates that secret into PostgreSQL URIs
 - PostgreSQL data must live on persistent storage, but persistent storage is not a substitute for backups
 - production/self-host startup order is database health -> ordered migration success -> API start
 - the API process must not run GORM `AutoMigrate`
