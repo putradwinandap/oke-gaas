@@ -19,6 +19,7 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&ruleMatchCountRecord{},
 		&ruleDailyClaimRecord{},
 		&rewardGrantRecord{},
+		&levelThresholdRecord{},
 		&playerStateRecord{},
 		&eventProcessingRecord{},
 	); err != nil {
@@ -35,6 +36,12 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		ON reward_grants(project_id, event_id, rule_id, reward_type)
 	`).Error; err != nil {
 		return fmt.Errorf("create development reward grant idempotency index: %w", err)
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_level_thresholds_project_min_xp
+		ON level_thresholds(project_id, min_xp)
+	`).Error; err != nil {
+		return fmt.Errorf("create development level threshold xp index: %w", err)
 	}
 
 	constraints := []struct {
@@ -98,6 +105,18 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 				ADD CONSTRAINT fk_reward_grants_player_project
 				FOREIGN KEY (project_id, player_id)
 				REFERENCES players(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "level_thresholds",
+			name:  "fk_level_thresholds_project",
+			statement: `
+				ALTER TABLE level_thresholds
+				ADD CONSTRAINT fk_level_thresholds_project
+				FOREIGN KEY (project_id)
+				REFERENCES projects(id)
 				ON UPDATE RESTRICT
 				ON DELETE RESTRICT
 			`,

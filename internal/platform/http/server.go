@@ -12,6 +12,7 @@ import (
 	recoverer "github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/putradwinandap/oke-gaas/internal/access"
 	eventdomain "github.com/putradwinandap/oke-gaas/internal/event"
+	"github.com/putradwinandap/oke-gaas/internal/level"
 	"github.com/putradwinandap/oke-gaas/internal/player"
 	"github.com/putradwinandap/oke-gaas/internal/progression"
 	"github.com/putradwinandap/oke-gaas/internal/project"
@@ -23,6 +24,7 @@ const requestOperationTimeout = 10 * time.Second
 type Dependencies struct {
 	Projects *project.ProvisionService
 	Players  *player.Service
+	Levels   *level.Service
 	Rules    *rule.Service
 	Progress *progression.Service
 	States   progression.Repository
@@ -105,6 +107,59 @@ func New(dependencies ...Dependencies) *fiber.App {
 			"external_id": value.ExternalID(),
 			"created_at":  value.CreatedAt(),
 		})
+	})
+
+	app.Post("/v1/projects/:projectId/levels", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		var request struct {
+			MinXP int64 `json:"min_xp"`
+		}
+		if err := c.Bind().Body(&request); err != nil {
+			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
+		}
+		value, err := deps.Levels.Append(ctx, projectID, request.MinXP)
+		if err != nil {
+			switch {
+			case errors.Is(err, level.ErrInvalidMinXP), errors.Is(err, level.ErrThresholdNotIncreasing):
+				return writeError(c, fiber.StatusBadRequest, "invalid_level", err.Error())
+			case errors.Is(err, project.ErrNotFound):
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			default:
+				return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not create level threshold")
+			}
+		}
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"project_id": value.ProjectID(),
+			"number":     value.Number(),
+			"min_xp":     value.MinXP(),
+		})
+	})
+
+	app.Get("/v1/projects/:projectId/levels", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		values, err := deps.Levels.List(ctx, projectID)
+		if err != nil {
+			if errors.Is(err, project.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not list level thresholds")
+		}
+		thresholds := make([]fiber.Map, 0, len(values)+1)
+		thresholds = append(thresholds, fiber.Map{"number": uint64(1), "min_xp": int64(0)})
+		for _, value := range values {
+			thresholds = append(thresholds, fiber.Map{"number": value.Number(), "min_xp": value.MinXP()})
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "levels": thresholds})
 	})
 
 	app.Post("/v1/projects/:projectId/rules", func(c fiber.Ctx) error {
@@ -211,6 +266,10 @@ func New(dependencies ...Dependencies) *fiber.App {
 				"amount":       grant.Amount(),
 			})
 		}
+		currentLevel, err := deps.Levels.Resolve(ctx, projectID, result.State.XP())
+		if err != nil {
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not resolve player level")
+		}
 		status := fiber.StatusCreated
 		if result.Duplicate {
 			status = fiber.StatusOK
@@ -222,6 +281,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 			"state": fiber.Map{
 				"player_id":  result.State.PlayerID(),
 				"xp":         result.State.XP(),
+				"level":      currentLevel,
 				"updated_at": result.State.UpdatedAt(),
 			},
 		})
@@ -248,14 +308,20 @@ func New(dependencies ...Dependencies) *fiber.App {
 					"project_id": projectID,
 					"player_id":  playerID,
 					"xp":         0,
+					"level":      uint64(1),
 				})
 			}
 			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not load player state")
+		}
+		currentLevel, err := deps.Levels.Resolve(ctx, projectID, state.XP())
+		if err != nil {
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not resolve player level")
 		}
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"project_id": state.ProjectID(),
 			"player_id":  state.PlayerID(),
 			"xp":         state.XP(),
+			"level":      currentLevel,
 			"updated_at": state.UpdatedAt(),
 		})
 	})

@@ -48,6 +48,38 @@ paths:
       responses:
         "201": { description: Player registered }
         "401": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/levels:
+    post:
+      summary: Append the next immutable XP Level threshold
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [min_xp]
+              properties:
+                min_xp:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  description: Must be strictly greater than the previous configured threshold.
+      responses:
+        "201": { description: Level threshold appended }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+    get:
+      summary: List the Project XP Level ladder
+      description: Level 1 at 0 XP is implicit and is included in the response.
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200": { description: Ordered Level thresholds including implicit level 1 }
+        "401": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/rules:
     post:
       summary: Create a version-1 exact-event XP rule with optional property, count, or UTC-day gating
@@ -107,7 +139,7 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/players/{playerId}/state:
     get:
-      summary: Retrieve current Player XP
+      summary: Retrieve current Player XP and derived Level
       security: [{ ProjectBearer: [] }]
       parameters:
         - $ref: "#/components/parameters/ProjectId"

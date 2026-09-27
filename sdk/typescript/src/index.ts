@@ -63,6 +63,7 @@ export interface RewardGrant {
 export interface TrackPlayerState {
   playerId: string;
   xp: number;
+  level: number;
   updatedAt?: string;
 }
 
@@ -77,7 +78,13 @@ export interface PlayerState {
   projectId: string;
   playerId: string;
   xp: number;
+  level: number;
   updatedAt?: string;
+}
+
+export interface LevelThreshold {
+  number: number;
+  minXp: number;
 }
 
 interface ApiErrorEnvelope {
@@ -116,6 +123,7 @@ interface ApiRewardGrant {
 interface ApiTrackPlayerState {
   player_id: string;
   xp: number;
+  level: number;
   updated_at?: string;
 }
 
@@ -130,7 +138,18 @@ interface ApiPlayerState {
   project_id: string;
   player_id: string;
   xp: number;
+  level: number;
   updated_at?: string;
+}
+
+interface ApiLevelThreshold {
+  number: number;
+  min_xp: number;
+}
+
+interface ApiLevelList {
+  project_id: string;
+  levels: ApiLevelThreshold[];
 }
 
 interface RequestResult {
@@ -166,6 +185,10 @@ export interface GaasClient {
   rules: {
     /** Create a version-1 exact-event XP rule. */
     create(input: CreateRuleInput, options?: RequestOptions): Promise<Rule>;
+  };
+  levels: {
+    append(minXp: number, options?: RequestOptions): Promise<LevelThreshold>;
+    list(options?: RequestOptions): Promise<LevelThreshold[]>;
   };
 }
 
@@ -278,6 +301,7 @@ export function createGaas(config: GaasConfig): GaasClient {
         state: {
           playerId: value.state.player_id,
           xp: value.state.xp,
+          level: value.state.level,
           ...(value.state.updated_at === undefined ? {} : { updatedAt: value.state.updated_at }),
         },
       };
@@ -319,8 +343,32 @@ export function createGaas(config: GaasConfig): GaasClient {
           projectId: value.project_id,
           playerId: value.player_id,
           xp: value.xp,
+          level: value.level,
           ...(value.updated_at === undefined ? {} : { updatedAt: value.updated_at }),
         };
+      },
+    },
+
+    levels: {
+      async append(minXp, options) {
+        const normalizedMinXp = requirePositiveSafeInteger(minXp, "minXp");
+        const result = await request(
+          `${projectPath}/levels`,
+          {
+            method: "POST",
+            body: stringifyJson({ min_xp: normalizedMinXp }),
+          },
+          options,
+        );
+        const value = requireApiLevelThreshold(result.payload, result.status);
+        return { number: value.number, minXp: value.min_xp };
+      },
+
+      async list(options) {
+        const result = await request(`${projectPath}/levels`, {}, options);
+        const value = requireApiLevelList(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        return value.levels.map((entry) => ({ number: entry.number, minXp: entry.min_xp }));
       },
     },
 
@@ -508,6 +556,20 @@ function requireApiPlayerState(value: unknown, status: number): ApiPlayerState {
   return value;
 }
 
+function requireApiLevelThreshold(value: unknown, status: number): ApiLevelThreshold {
+  if (!isApiLevelThreshold(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
+function requireApiLevelList(value: unknown, status: number): ApiLevelList {
+  if (!isApiLevelList(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
 function requireResponseInvariant(condition: boolean, status: number): void {
   if (!condition) {
     throw invalidResponse(status);
@@ -555,6 +617,7 @@ function isApiTrackPlayerState(value: unknown): value is ApiTrackPlayerState {
   return isRecord(value)
     && typeof value.player_id === "string"
     && isNonNegativeSafeInteger(value.xp)
+    && isPositiveSafeInteger(value.level)
     && isOptionalString(value.updated_at);
 }
 
@@ -572,7 +635,21 @@ function isApiPlayerState(value: unknown): value is ApiPlayerState {
     && typeof value.project_id === "string"
     && typeof value.player_id === "string"
     && isNonNegativeSafeInteger(value.xp)
+    && isPositiveSafeInteger(value.level)
     && isOptionalString(value.updated_at);
+}
+
+function isApiLevelThreshold(value: unknown): value is ApiLevelThreshold {
+  return isRecord(value)
+    && isPositiveSafeInteger(value.number)
+    && isNonNegativeSafeInteger(value.min_xp);
+}
+
+function isApiLevelList(value: unknown): value is ApiLevelList {
+  return isRecord(value)
+    && typeof value.project_id === "string"
+    && Array.isArray(value.levels)
+    && value.levels.every(isApiLevelThreshold);
 }
 
 function isPositiveSafeInteger(value: unknown): value is number {

@@ -165,6 +165,7 @@ test("baseUrl path prefixes remain supported for reverse proxies", async () => {
       project_id: "proj_test",
       player_id: "player_123",
       xp: 42,
+      level: 1,
     }));
   }, async (baseUrl) => {
     const gaas = createGaas({
@@ -185,6 +186,7 @@ test("successful responses must remain bound to the requested project and player
       project_id: "proj_other",
       player_id: "player_123",
       xp: 10,
+      level: 1,
     }));
   }, async (baseUrl) => {
     const gaas = createGaas({ projectId: "proj_test", apiKey: "secret", baseUrl });
