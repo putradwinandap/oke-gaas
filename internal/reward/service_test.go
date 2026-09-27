@@ -18,7 +18,6 @@ func (r fakeRuleRepository) ListByEventType(context.Context, string, string) ([]
 	return r.rules, nil
 }
 
-
 type fakeMatchCounter struct {
 	count uint64
 }
