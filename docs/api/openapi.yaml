@@ -50,7 +50,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/rules:
     post:
-      summary: Create a version-1 exact-event XP rule with optional property conditions and count threshold
+      summary: Create a version-1 exact-event XP rule with optional property, count, or UTC-day gating
       security: [{ ProjectBearer: [] }]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -74,6 +74,10 @@ paths:
                   minimum: 1
                   default: 1
                   description: Grant XP on every Nth matching Event for each Player.
+                once_per_utc_day:
+                  type: boolean
+                  default: false
+                  description: Grant at most once per UTC calendar day for each Player and Rule version, using Event occurred_at. Requires match_every=1.
       responses:
         "201": { description: Rule created }
   /v1/projects/{projectId}/events:

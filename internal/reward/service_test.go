@@ -27,6 +27,22 @@ func (c *fakeMatchCounter) Increment(context.Context, string, string, string, ui
 	return c.count, nil
 }
 
+type fakeDailyClaimer struct {
+	claimed map[string]bool
+}
+
+func (c *fakeDailyClaimer) Claim(_ context.Context, _, _, _ string, _ uint64, occurredAt time.Time) (bool, error) {
+	if c.claimed == nil {
+		c.claimed = make(map[string]bool)
+	}
+	day := occurredAt.UTC().Format("2006-01-02")
+	if c.claimed[day] {
+		return false, nil
+	}
+	c.claimed[day] = true
+	return true, nil
+}
+
 type fakeGrantRepository struct{ saved []*Grant }
 
 func (r *fakeGrantRepository) Save(_ context.Context, grant *Grant) error {
@@ -93,6 +109,46 @@ func TestServiceGrantsOnlyOnAggregateThreshold(t *testing.T) {
 	}
 	require.Equal(t, uint64(3), counter.count)
 	require.Len(t, repository.saved, 1)
+}
+
+func TestServiceGrantsDailyRuleAtMostOncePerUTCDay(t *testing.T) {
+	daily, err := rule.NewTimed("rule_daily", "proj_1", 1, "daily_login", 25, nil, 1, true)
+	require.NoError(t, err)
+
+	repository := &fakeGrantRepository{}
+	claims := &fakeDailyClaimer{}
+	service := NewServiceWithDailyClaims(
+		fakeRuleRepository{rules: []*rule.Rule{daily}},
+		repository,
+		nil,
+		claims,
+	)
+	service.newID = func() (string, error) { return fmt.Sprintf("grant_%d", len(repository.saved)+1), nil }
+
+	events := []struct {
+		id         string
+		occurredAt time.Time
+		wantGrant  bool
+	}{
+		{"evt_day_1_first", time.Date(2026, 9, 27, 1, 0, 0, 0, time.UTC), true},
+		{"evt_day_1_second", time.Date(2026, 9, 27, 23, 0, 0, 0, time.UTC), false},
+		{"evt_day_2", time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC), true},
+	}
+	for _, test := range events {
+		value, err := event.New(
+			test.id, "proj_1", "player_1", "daily_login",
+			test.occurredAt, test.occurredAt.Add(time.Second), nil,
+		)
+		require.NoError(t, err)
+		grants, err := service.Process(context.Background(), value)
+		require.NoError(t, err)
+		if test.wantGrant {
+			require.Len(t, grants, 1)
+		} else {
+			require.Empty(t, grants)
+		}
+	}
+	require.Len(t, repository.saved, 2)
 }
 
 func TestServiceDoesNotAdvanceAggregateCounterForNonMatchingConditions(t *testing.T) {

@@ -129,6 +129,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
         xp: 100,
         conditions: { difficulty: "hard" },
         match_every: 3,
+        once_per_utc_day: false,
       }));
       return;
     }
@@ -166,6 +167,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
       xp: 100,
       conditions: { difficulty: "hard" },
       matchEvery: 3,
+      oncePerUtcDay: false,
     });
     assert.deepEqual(await gaas.players.get("player_123"), {
       projectId: "proj_test",
@@ -180,6 +182,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
     xp: 100,
     conditions: { difficulty: "hard" },
     match_every: 3,
+    once_per_utc_day: false,
   });
 
   assert.deepEqual(requests.map(({ method, url }) => ({ method, url })), [
@@ -202,14 +205,73 @@ test("rules default matchEvery to one and reject invalid thresholds", async () =
       xp: 10,
       conditions: {},
       match_every: 1,
+      once_per_utc_day: false,
     }));
   }, async (baseUrl) => {
     const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
     const result = await gaas.rules.create({ eventType: "daily_login", xp: 10 });
     assert.equal(result.matchEvery, 1);
+    assert.equal(result.oncePerUtcDay, false);
     await assert.rejects(
       () => gaas.rules.create({ eventType: "daily_login", xp: 10, matchEvery: 0 }),
       /matchEvery/,
+    );
+  });
+});
+
+test("rules support once-per-UTC-day gating and leave composition validation to the server", async () => {
+  let calls = 0;
+  await withServer(async (request, response) => {
+    calls += 1;
+    const body = await readJson(request);
+    assert.equal(body.once_per_utc_day, true);
+
+    if (calls === 1) {
+      assert.equal(body.match_every, 1);
+      response.writeHead(201, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        id: "rule_daily",
+        project_id: "proj_test",
+        version: 1,
+        event_type: "daily_login",
+        xp: 25,
+        conditions: {},
+        match_every: 1,
+        once_per_utc_day: true,
+      }));
+      return;
+    }
+
+    assert.equal(body.match_every, 2);
+    response.writeHead(400, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      error: {
+        code: "invalid_rule",
+        message: "once_per_utc_day requires match_every=1",
+      },
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
+    const result = await gaas.rules.create({
+      eventType: "daily_login",
+      xp: 25,
+      oncePerUtcDay: true,
+    });
+    assert.equal(result.oncePerUtcDay, true);
+
+    await assert.rejects(
+      () => gaas.rules.create({
+        eventType: "daily_login",
+        xp: 25,
+        matchEvery: 2,
+        oncePerUtcDay: true,
+      }),
+      (error) => {
+        assert.ok(error instanceof GaasError);
+        assert.equal(error.code, "invalid_rule");
+        assert.equal(error.status, 400);
+        return true;
+      },
     );
   });
 });

@@ -41,6 +41,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 	for _, table := range []string{
 		"project_api_keys",
 		"event_processing",
+		"rule_daily_claims",
 		"rule_match_counts",
 		"player_states",
 		"reward_grants",
@@ -60,6 +61,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000006_project_api_keys.up.sql",
 		"../../../migrations/000007_rule_conditions.up.sql",
 		"../../../migrations/000008_rule_match_counts.up.sql",
+		"../../../migrations/000009_rule_daily_claims.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -404,4 +406,68 @@ func TestRESTAggregateRuleRewardsEveryNthMatchingEvent(t *testing.T) {
 		Where("project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?", projectID, playerID, ruleID, 1).
 		Scan(&count).Error)
 	require.Equal(t, uint64(2), count)
+}
+
+func TestRESTDailyRuleRewardsAtMostOncePerUTCDay(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+
+	projectID, apiKey := createProjectViaAPI(t, app, "Daily Learning")
+	resp, playerBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey,
+		map[string]any{"external_id": "student-daily"},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	playerID := playerBody["id"].(string)
+
+	resp, invalid := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey,
+		map[string]any{
+			"event_type":       "daily_login",
+			"xp":               25,
+			"match_every":      2,
+			"once_per_utc_day": true,
+		},
+	)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, "invalid_rule", invalid["error"].(map[string]any)["code"])
+
+	resp, ruleBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey,
+		map[string]any{
+			"event_type":       "daily_login",
+			"xp":               25,
+			"once_per_utc_day": true,
+		},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, true, ruleBody["once_per_utc_day"])
+	require.Equal(t, float64(1), ruleBody["match_every"])
+
+	send := func(eventID string, occurredAt time.Time) (*http.Response, map[string]any) {
+		return requestJSON(t, app, http.MethodPost,
+			fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey,
+			map[string]any{
+				"event_id":    eventID,
+				"player_id":   playerID,
+				"type":        "daily_login",
+				"occurred_at": occurredAt.Format(time.RFC3339Nano),
+			},
+		)
+	}
+
+	resp, first := send("evt_daily_api_first", time.Date(2026, 9, 27, 1, 0, 0, 0, time.UTC))
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Len(t, first["grants"].([]any), 1)
+	require.Equal(t, float64(25), first["state"].(map[string]any)["xp"])
+
+	resp, sameDay := send("evt_daily_api_second", time.Date(2026, 9, 27, 23, 59, 0, 0, time.UTC))
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Empty(t, sameDay["grants"].([]any))
+	require.Equal(t, float64(25), sameDay["state"].(map[string]any)["xp"])
+
+	resp, nextDay := send("evt_daily_api_next", time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC))
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Len(t, nextDay["grants"].([]any), 1)
+	require.Equal(t, float64(50), nextDay["state"].(map[string]any)["xp"])
 }

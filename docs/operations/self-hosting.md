@@ -82,6 +82,12 @@ Migration `000008_rule_match_counts` is backward-compatible for existing immedia
 
 The `000008` down migration therefore fails closed while aggregate Rules exist. If aggregate behavior has been activated, recover with a forward-fix or restore a verified backup from before aggregate Rules were created. Do not delete aggregate Rules or their counters merely to force a rollback.
 
+### Once-per-UTC-day rollback boundary
+
+Migration `000009_rule_daily_claims` adds `once_per_utc_day` and the `rule_daily_claims` state that older binaries do not understand. Once any Rule with `once_per_utc_day = true` has been created, **do not roll the application binary back to a pre-000009 version**: an older binary would ignore the daily gate and could grant XP repeatedly for same-day Events.
+
+The `000009` down migration therefore fails closed while daily Rules exist. If daily behavior has been activated, recover with a forward-fix or restore a verified backup from before daily Rules were created. Schema downgrades must be applied in reverse migration order: `000009` must be removed before attempting to remove `000008`.
+
 ## Backup
 
 The PostgreSQL volume is persistent, but a volume is not a backup.

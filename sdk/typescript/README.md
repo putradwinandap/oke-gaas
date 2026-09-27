@@ -130,4 +130,18 @@ await gaas.rules.create({
 });
 ```
 
-Omitting `matchEvery` defaults to `1`, preserving immediate rewards. Counting and threshold evaluation remain server responsibilities; the SDK only sends the configuration. Time windows, arbitrary aggregate expressions, and a general rule DSL are intentionally not supported.
+Omitting `matchEvery` defaults to `1`, preserving immediate rewards. Counting and threshold evaluation remain server responsibilities; the SDK only sends the configuration. Arbitrary aggregate expressions and a general rule DSL are intentionally not supported.
+
+### Once-per-UTC-day XP rules
+
+Use `oncePerUtcDay` for a narrow daily-login style rule that may grant at most once per UTC calendar day:
+
+```ts
+await gaas.rules.create({
+  eventType: "daily_login",
+  xp: 25,
+  oncePerUtcDay: true,
+});
+```
+
+The day is derived from the Event's `occurredAt` in UTC. This first time-aware slice requires `matchEvery: 1`; custom time zones, rolling windows, streak state, and general scheduling expressions are intentionally out of scope.

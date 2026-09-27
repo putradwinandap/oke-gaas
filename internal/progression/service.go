@@ -20,13 +20,14 @@ type ProcessingClaims interface {
 
 // Work contains repositories bound to one transaction.
 type Work struct {
-	Players  player.Repository
-	Events   event.Repository
-	Rules    rule.Repository
-	Grants   reward.Repository
-	Counters reward.MatchCounter
-	States   Repository
-	Claims   ProcessingClaims
+	Players     player.Repository
+	Events      event.Repository
+	Rules       rule.Repository
+	Grants      reward.Repository
+	Counters    reward.MatchCounter
+	DailyClaims reward.DailyClaimer
+	States      Repository
+	Claims      ProcessingClaims
 }
 
 // Transactor executes one callback atomically.
@@ -98,7 +99,7 @@ func (s *Service) Process(ctx context.Context, command event.IngestCommand) (*Pr
 			return fmt.Errorf("materialize player state: %w", err)
 		}
 
-		rewards := reward.NewService(work.Rules, work.Grants, work.Counters)
+		rewards := reward.NewServiceWithDailyClaims(work.Rules, work.Grants, work.Counters, work.DailyClaims)
 		result.Grants, err = rewards.Process(ctx, ingested.Event)
 		if err != nil {
 			return fmt.Errorf("process rewards: %w", err)

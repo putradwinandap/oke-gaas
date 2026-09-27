@@ -146,6 +146,14 @@ func TestRuleRequiresExplicitPositiveVersionXPAndAggregateThreshold(t *testing.T
 	immediate, err := New("rule_immediate", "proj_1", 1, "lesson_completed", 100)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), immediate.MatchEvery())
+	require.False(t, immediate.OncePerUTCDay())
+
+	daily, err := NewTimed("rule_daily", "proj_1", 1, "daily_login", 25, nil, 1, true)
+	require.NoError(t, err)
+	require.True(t, daily.OncePerUTCDay())
+
+	_, err = NewTimed("rule_invalid_daily", "proj_1", 1, "daily_login", 25, nil, 2, true)
+	require.ErrorIs(t, err, ErrIncompatibleTimeWindow)
 }
 
 func TestRuleRejectsEventTypeLongerThanPersistenceLimit(t *testing.T) {

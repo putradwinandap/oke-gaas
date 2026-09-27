@@ -16,13 +16,19 @@ type MatchCounter interface {
 	Increment(ctx context.Context, projectID, playerID, ruleID string, ruleVersion uint64, matchedAt time.Time) (uint64, error)
 }
 
+// DailyClaimer atomically claims one UTC calendar day for a Player and Rule version.
+type DailyClaimer interface {
+	Claim(ctx context.Context, projectID, playerID, ruleID string, ruleVersion uint64, occurredAt time.Time) (bool, error)
+}
+
 // Service evaluates matching rules and records auditable grants.
 type Service struct {
-	rules   rule.Repository
-	grants  Repository
-	counter MatchCounter
-	now     func() time.Time
-	newID   func() (string, error)
+	rules       rule.Repository
+	grants      Repository
+	counter     MatchCounter
+	dailyClaims DailyClaimer
+	now         func() time.Time
+	newID       func() (string, error)
 }
 
 func NewService(rules rule.Repository, grants Repository, counters ...MatchCounter) *Service {
@@ -31,6 +37,14 @@ func NewService(rules rule.Repository, grants Repository, counters ...MatchCount
 		counter = counters[0]
 	}
 	return &Service{rules: rules, grants: grants, counter: counter, now: time.Now, newID: randomGrantID}
+}
+
+// NewServiceWithDailyClaims wires both aggregate counters and UTC-day claims.
+func NewServiceWithDailyClaims(rules rule.Repository, grants Repository, counter MatchCounter, dailyClaims DailyClaimer) *Service {
+	return &Service{
+		rules: rules, grants: grants, counter: counter, dailyClaims: dailyClaims,
+		now: time.Now, newID: randomGrantID,
+	}
 }
 
 // Process evaluates all exact-event rules for one Event and persists one Grant per match.
@@ -47,6 +61,25 @@ func (s *Service) Process(ctx context.Context, value *event.Event) ([]*Grant, er
 	for _, candidate := range rules {
 		if candidate == nil || !candidate.Matches(value) {
 			continue
+		}
+		if candidate.OncePerUTCDay() {
+			if s.dailyClaims == nil {
+				return nil, fmt.Errorf("process daily rule %s: daily claimer is required", candidate.ID())
+			}
+			claimed, err := s.dailyClaims.Claim(
+				ctx,
+				value.ProjectID(),
+				value.PlayerID(),
+				candidate.ID(),
+				candidate.Version(),
+				value.OccurredAt(),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("claim rule %s UTC day: %w", candidate.ID(), err)
+			}
+			if !claimed {
+				continue
+			}
 		}
 		if candidate.MatchEvery() > 1 {
 			if s.counter == nil {
