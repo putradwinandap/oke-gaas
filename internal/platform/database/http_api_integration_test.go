@@ -255,7 +255,6 @@ func TestRESTRejectsOversizedPublicInputBeforePersistence(t *testing.T) {
 	require.Zero(t, count)
 }
 
-
 func TestRESTConditionalRuleRewardsOnlyMatchingProperties(t *testing.T) {
 	db := openHTTPIntegrationDatabase(t)
 	app := newHTTPIntegrationApp(db)
