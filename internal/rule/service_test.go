@@ -59,6 +59,28 @@ func TestCreateExactXPCreatesVersionOneRuleInExistingProject(t *testing.T) {
 	require.Equal(t, uint64(1), value.Version())
 	require.Equal(t, "lesson_completed", value.EventType())
 	require.Equal(t, int64(100), value.XPAmount())
+	require.Empty(t, value.Conditions())
+	require.Len(t, rules.values, 1)
+}
+
+func TestCreateXPPreservesNormalizedConditions(t *testing.T) {
+	projects := &memoryProjectRepository{values: make(map[string]*project.Project)}
+	rules := &memoryRuleRepository{}
+
+	proj, err := project.New("Learning", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, projects.Save(context.Background(), proj))
+
+	service := NewService(projects, rules)
+	value, err := service.CreateXP(
+		context.Background(),
+		proj.ID(),
+		"lesson_completed",
+		100,
+		map[string]any{"difficulty": 1.0},
+	)
+	require.NoError(t, err)
+	require.Contains(t, value.Conditions(), "difficulty")
 	require.Len(t, rules.values, 1)
 }
 
