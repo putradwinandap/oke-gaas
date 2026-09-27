@@ -22,12 +22,12 @@ Create a local `.env` file for Docker Compose. Do not commit it.
 ```dotenv
 POSTGRES_DB=oke_gaas
 POSTGRES_USER=oke_gaas
-POSTGRES_PASSWORD=replace-with-a-strong-database-password
+POSTGRES_PASSWORD=replace-with-32-plus-random-url-safe-characters
 OKE_GAAS_ADMIN_API_KEY=replace-with-at-least-32-random-non-whitespace-characters
 OKE_GAAS_HTTP_PORT=8080
 ```
 
-Generate secrets with an appropriate cryptographically secure password/secret generator. Project API keys are provisioned by the API and are returned only at Project creation.
+Generate secrets with an appropriate cryptographically secure password/secret generator. Because the baseline constructs PostgreSQL connection URIs from `POSTGRES_PASSWORD`, keep that value to URL-unreserved characters (`A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`) and use at least 32 random characters. Project API keys are provisioned by the API and are returned only at Project creation.
 
 ## Start the stack
 
@@ -62,7 +62,7 @@ Override the host port with `OKE_GAAS_HTTP_PORT`.
 
 ## Migration operations
 
-The Compose baseline pins the migration runner to `migrate/migrate:v4.19.0`.
+The Compose baseline pins the migration runner to `migrate/migrate:v4.19.1`.
 
 Normal deployment order:
 
@@ -83,13 +83,8 @@ The PostgreSQL volume is persistent, but a volume is not a backup.
 Create a logical backup:
 
 ```bash
-docker compose exec -T postgres \
-  pg_dump \
-  --username="${POSTGRES_USER:-oke_gaas}" \
-  --dbname="${POSTGRES_DB:-oke_gaas}" \
-  --format=custom \
-  --no-owner \
-  --no-privileges \
+docker compose exec -T postgres sh -c \
+  'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom --no-owner --no-privileges' \
   > oke-gaas.dump
 ```
 
@@ -105,13 +100,10 @@ For a clean replacement database in the Compose environment:
 
 ```bash
 docker compose stop api
-docker compose exec -T postgres dropdb --username="${POSTGRES_USER:-oke_gaas}" --if-exists "${POSTGRES_DB:-oke_gaas}"
-docker compose exec -T postgres createdb --username="${POSTGRES_USER:-oke_gaas}" "${POSTGRES_DB:-oke_gaas}"
-docker compose exec -T postgres pg_restore \
-  --username="${POSTGRES_USER:-oke_gaas}" \
-  --dbname="${POSTGRES_DB:-oke_gaas}" \
-  --no-owner \
-  --no-privileges \
+docker compose exec -T postgres sh -c \
+  'dropdb --username="$POSTGRES_USER" --if-exists "$POSTGRES_DB" && createdb --username="$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose exec -T postgres sh -c \
+  'pg_restore --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --no-owner --no-privileges' \
   < oke-gaas.dump
 ```
 
