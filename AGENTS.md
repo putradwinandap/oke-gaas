@@ -876,6 +876,7 @@ Operational rules:
 
 - the API image must run as a non-root user
 - self-hosting/base container images must use explicit human-readable versions plus immutable digests; floating tags are not sufficient for the reproducible baseline
+- runtime image builds must avoid mutable package-manager network installs unless package artifacts/versions are explicitly locked by a reviewed mechanism
 - no real secret may be committed to the repository or baked into the image
 - connection-string components must be encoded safely; the Compose baseline therefore requires a long URL-unreserved PostgreSQL password because it interpolates that secret into PostgreSQL URIs
 - PostgreSQL data must live on persistent storage, but persistent storage is not a substitute for backups
