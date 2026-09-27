@@ -70,6 +70,114 @@ func seedProgressionFixture(t *testing.T, db *gorm.DB, xpAmount int64) (*project
 	return proj, pl
 }
 
+type aggregateCounterCoordinator struct {
+	mu           sync.Mutex
+	calls        int
+	firstLocked  chan struct{}
+	releaseFirst chan struct{}
+	secondPID    chan int
+	counts       chan uint64
+}
+
+func newAggregateCounterCoordinator() *aggregateCounterCoordinator {
+	return &aggregateCounterCoordinator{
+		firstLocked:  make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		secondPID:    make(chan int, 1),
+		counts:       make(chan uint64, 2),
+	}
+}
+
+func (c *aggregateCounterCoordinator) nextCall() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls++
+	return c.calls
+}
+
+type coordinatedAggregateCounter struct {
+	base        *RuleMatchCounter
+	coordinator *aggregateCounterCoordinator
+}
+
+func (c *coordinatedAggregateCounter) Increment(
+	ctx context.Context,
+	projectID, playerID, ruleID string,
+	ruleVersion uint64,
+	matchedAt time.Time,
+) (uint64, error) {
+	call := c.coordinator.nextCall()
+	if call == 1 {
+		count, err := c.base.Increment(ctx, projectID, playerID, ruleID, ruleVersion, matchedAt)
+		close(c.coordinator.firstLocked)
+		if err != nil {
+			return 0, err
+		}
+		c.coordinator.counts <- count
+		select {
+		case <-c.coordinator.releaseFirst:
+			return count, nil
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}
+
+	if call == 2 {
+		select {
+		case <-c.coordinator.firstLocked:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+
+		var backendPID int
+		if err := c.base.db.WithContext(ctx).Raw("SELECT pg_backend_pid()").Scan(&backendPID).Error; err != nil {
+			return 0, err
+		}
+		select {
+		case c.coordinator.secondPID <- backendPID:
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+
+		count, err := c.base.Increment(ctx, projectID, playerID, ruleID, ruleVersion, matchedAt)
+		if err == nil {
+			c.coordinator.counts <- count
+		}
+		return count, err
+	}
+
+	count, err := c.base.Increment(ctx, projectID, playerID, ruleID, ruleVersion, matchedAt)
+	if err == nil {
+		c.coordinator.counts <- count
+	}
+	return count, err
+}
+
+type coordinatedProgressionTransactor struct {
+	db          *gorm.DB
+	coordinator *aggregateCounterCoordinator
+}
+
+func (t *coordinatedProgressionTransactor) WithinTransaction(
+	ctx context.Context,
+	fn func(progression.Work) error,
+) error {
+	return t.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(progression.Work{
+			Players: NewPlayerRepository(tx),
+			Events:  NewEventRepository(tx),
+			Rules:   NewRuleRepository(tx),
+			Grants:  NewRewardGrantRepository(tx),
+			Counters: &coordinatedAggregateCounter{
+				base:        NewRuleMatchCounter(tx),
+				coordinator: t.coordinator,
+			},
+			States: NewPlayerStateRepository(tx),
+			Claims: NewEventProcessingRepository(tx),
+		})
+	})
+}
+
 func TestProgressionTransactionIsIdempotentAndMaterializesXP(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
 	ctx := context.Background()
@@ -501,7 +609,11 @@ func TestAggregateRuleConcurrentEventsCrossThresholdOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, NewRuleRepository(db).Save(ctx, aggregate))
 
-	service := progression.NewService(NewProgressionTransactor(db))
+	coordinator := newAggregateCounterCoordinator()
+	service := progression.NewService(&coordinatedProgressionTransactor{
+		db:          db,
+		coordinator: coordinator,
+	})
 	commands := []eventdomain.IngestCommand{
 		{
 			ID:         "evt_aggregate_a",
@@ -532,6 +644,29 @@ func TestAggregateRuleConcurrentEventsCrossThresholdOnce(t *testing.T) {
 			errs <- err
 		}()
 	}
+
+	var secondPID int
+	select {
+	case secondPID = <-coordinator.secondPID:
+	case <-time.After(5 * time.Second):
+		close(coordinator.releaseFirst)
+		require.FailNow(t, "second aggregate transaction did not reach the shared counter")
+	}
+
+	blocked := false
+	deadline := time.Now().Add(5 * time.Second)
+	for !blocked && time.Now().Before(deadline) {
+		require.NoError(t, db.Raw(
+			"SELECT cardinality(pg_blocking_pids(?)) > 0",
+			secondPID,
+		).Scan(&blocked).Error)
+		if !blocked {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	close(coordinator.releaseFirst)
+	require.True(t, blocked, "second aggregate transaction never blocked on the first counter update")
+
 	wg.Wait()
 	close(results)
 	close(errs)
@@ -539,6 +674,9 @@ func TestAggregateRuleConcurrentEventsCrossThresholdOnce(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
+
+	counts := []uint64{<-coordinator.counts, <-coordinator.counts}
+	require.ElementsMatch(t, []uint64{1, 2}, counts)
 
 	var granted int
 	for result := range results {
