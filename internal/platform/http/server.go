@@ -139,10 +139,10 @@ func New(dependencies ...Dependencies) *fiber.App {
 			}
 		}
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-			"id":         value.ID(),
-			"project_id": value.ProjectID(),
-			"version":    value.Version(),
-			"event_type": value.EventType(),
+			"id":          value.ID(),
+			"project_id":  value.ProjectID(),
+			"version":     value.Version(),
+			"event_type":  value.EventType(),
 			"xp":          value.XPAmount(),
 			"conditions":  value.Conditions(),
 			"match_every": value.MatchEvery(),
