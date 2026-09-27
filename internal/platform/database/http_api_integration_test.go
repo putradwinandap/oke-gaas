@@ -286,6 +286,7 @@ func TestRESTConditionalRuleRewardsOnlyMatchingProperties(t *testing.T) {
 		"course_id":  "course_7",
 		"difficulty": float64(2),
 	}, ruleBody["conditions"])
+	require.Equal(t, float64(1), ruleBody["match_every"])
 
 	baseEvent := map[string]any{
 		"player_id":   playerID,
@@ -352,6 +353,7 @@ func TestRESTAggregateRuleRewardsEveryNthMatchingEvent(t *testing.T) {
 	require.Equal(t, float64(2), ruleBody["match_every"])
 	ruleID := ruleBody["id"].(string)
 
+	occurredAt := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)
 	send := func(eventID, courseID string) (*http.Response, map[string]any) {
 		return requestJSON(t, app, http.MethodPost,
 			fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey,
@@ -359,7 +361,7 @@ func TestRESTAggregateRuleRewardsEveryNthMatchingEvent(t *testing.T) {
 				"event_id":    eventID,
 				"player_id":   playerID,
 				"type":        "lesson_completed",
-				"occurred_at": time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano),
+				"occurred_at": occurredAt,
 				"properties":  map[string]any{"course_id": courseID},
 			},
 		)
