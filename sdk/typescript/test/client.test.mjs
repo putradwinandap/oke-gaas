@@ -52,6 +52,7 @@ test("track authenticates, generates event identity, and maps the result", async
       state: {
         player_id: "player_123",
         xp: 100,
+        level: 2,
         updated_at: "2026-09-26T10:00:00Z",
       },
     }));
@@ -74,6 +75,7 @@ test("track authenticates, generates event identity, and maps the result", async
     assert.deepEqual(result.state, {
       playerId: "player_123",
       xp: 100,
+      level: 2,
       updatedAt: "2026-09-26T10:00:00Z",
     });
   });
@@ -89,7 +91,7 @@ test("track preserves caller-supplied event identity and timestamp", async () =>
       event_id: body.event_id,
       duplicate: true,
       grants: [],
-      state: { player_id: "player_123", xp: 100 },
+      state: { player_id: "player_123", xp: 100, level: 2 },
     }));
   }, async (baseUrl) => {
     const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
@@ -139,6 +141,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
         project_id: "proj_test",
         player_id: "player_123",
         xp: 100,
+        level: 2,
         updated_at: "2026-09-26T10:00:00Z",
       }));
       return;
@@ -173,6 +176,7 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
       projectId: "proj_test",
       playerId: "player_123",
       xp: 100,
+      level: 2,
       updatedAt: "2026-09-26T10:00:00Z",
     });
   });
@@ -305,4 +309,41 @@ test("client configuration rejects empty credentials and unsafe URL schemes", ()
     () => createGaas({ projectId: "proj_test", apiKey: "secret", baseUrl: "file:///tmp/gaas" }),
     /http or https/,
   );
+});
+
+
+test("levels append immutable thresholds and list the implicit level one", async () => {
+  let call = 0;
+  await withServer(async (request, response) => {
+    call += 1;
+    assert.equal(request.headers.authorization, "Bearer secret-key");
+    response.setHeader("content-type", "application/json");
+
+    if (call === 1) {
+      assert.equal(request.method, "POST");
+      assert.equal(request.url, "/v1/projects/proj_test/levels");
+      assert.deepEqual(await readJson(request), { min_xp: 100 });
+      response.writeHead(201);
+      response.end(JSON.stringify({ project_id: "proj_test", number: 2, min_xp: 100 }));
+      return;
+    }
+
+    assert.equal(request.method, "GET");
+    assert.equal(request.url, "/v1/projects/proj_test/levels");
+    response.writeHead(200);
+    response.end(JSON.stringify({
+      project_id: "proj_test",
+      levels: [
+        { number: 1, min_xp: 0 },
+        { number: 2, min_xp: 100 },
+      ],
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
+    assert.deepEqual(await gaas.levels.append(100), { number: 2, minXp: 100 });
+    assert.deepEqual(await gaas.levels.list(), [
+      { number: 1, minXp: 0 },
+      { number: 2, minXp: 100 },
+    ]);
+  });
 });
