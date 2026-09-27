@@ -54,7 +54,6 @@ func TestConcurrentLevelAppendKeepsOneContiguousNextLevel(t *testing.T) {
 	require.Equal(t, int64(100), values[0].MinXP())
 }
 
-
 func TestLevelMigrationDownFailsClosedWhenThresholdsExist(t *testing.T) {
 	db := openHTTPIntegrationDatabase(t)
 	ctx := context.Background()
