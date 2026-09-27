@@ -22,6 +22,10 @@ The umbrella product-direction issue is [#1 — define Oke Gaas product directio
 - [ADR-002: Event-Driven Modular Monolith](./decisions/002-modular-monolith.md)
 - [ADR-003: Versioned Database Migrations](./decisions/003-versioned-database-migrations.md)
 
+## Operations
+
+- [Self-hosting and operations](./operations/self-hosting.md)
+
 ## SDKs
 
 - [TypeScript SDK](./sdk/typescript.md)
