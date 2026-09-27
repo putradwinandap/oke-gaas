@@ -609,6 +609,9 @@ func TestAggregateRuleConcurrentEventsCrossThresholdOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, NewRuleRepository(db).Save(ctx, aggregate))
 
+	_, err = NewPlayerStateRepository(db).Ensure(ctx, proj.ID(), pl.ID(), time.Now())
+	require.NoError(t, err)
+
 	coordinator := newAggregateCounterCoordinator()
 	service := progression.NewService(&coordinatedProgressionTransactor{
 		db:          db,
