@@ -37,6 +37,12 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 	`).Error; err != nil {
 		return fmt.Errorf("create development reward grant idempotency index: %w", err)
 	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_level_thresholds_project_min_xp
+		ON level_thresholds(project_id, min_xp)
+	`).Error; err != nil {
+		return fmt.Errorf("create development level threshold xp index: %w", err)
+	}
 
 	constraints := []struct {
 		table     string
