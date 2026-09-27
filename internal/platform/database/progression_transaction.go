@@ -31,9 +31,10 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 			Players: NewPlayerRepository(tx),
 			Events:  NewEventRepository(tx),
 			Rules:   NewRuleRepository(tx),
-			Grants:  NewRewardGrantRepository(tx),
-			States:  NewPlayerStateRepository(tx),
-			Claims:  NewEventProcessingRepository(tx),
+			Grants:   NewRewardGrantRepository(tx),
+			Counters: NewRuleMatchCounter(tx),
+			States:   NewPlayerStateRepository(tx),
+			Claims:   NewEventProcessingRepository(tx),
 		})
 	}); err != nil {
 		return fmt.Errorf("progression transaction: %w", err)
