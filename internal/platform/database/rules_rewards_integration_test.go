@@ -164,7 +164,6 @@ func TestRewardGrantRepositoryRejectsSameEventRuleAcrossVersions(t *testing.T) {
 	require.Equal(t, int64(100), history[0].Amount())
 }
 
-
 func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
 	db := openRulesRewardsIntegrationDatabase(t)
 	ctx := context.Background()
