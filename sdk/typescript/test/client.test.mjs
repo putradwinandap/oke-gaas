@@ -219,21 +219,36 @@ test("rules default matchEvery to one and reject invalid thresholds", async () =
   });
 });
 
-test("rules support once-per-UTC-day gating and reject aggregate composition", async () => {
+test("rules support once-per-UTC-day gating and leave composition validation to the server", async () => {
+  let calls = 0;
   await withServer(async (request, response) => {
+    calls += 1;
     const body = await readJson(request);
-    assert.equal(body.match_every, 1);
     assert.equal(body.once_per_utc_day, true);
-    response.writeHead(201, { "content-type": "application/json" });
+
+    if (calls === 1) {
+      assert.equal(body.match_every, 1);
+      response.writeHead(201, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        id: "rule_daily",
+        project_id: "proj_test",
+        version: 1,
+        event_type: "daily_login",
+        xp: 25,
+        conditions: {},
+        match_every: 1,
+        once_per_utc_day: true,
+      }));
+      return;
+    }
+
+    assert.equal(body.match_every, 2);
+    response.writeHead(400, { "content-type": "application/json" });
     response.end(JSON.stringify({
-      id: "rule_daily",
-      project_id: "proj_test",
-      version: 1,
-      event_type: "daily_login",
-      xp: 25,
-      conditions: {},
-      match_every: 1,
-      once_per_utc_day: true,
+      error: {
+        code: "invalid_rule",
+        message: "once_per_utc_day requires match_every=1",
+      },
     }));
   }, async (baseUrl) => {
     const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
@@ -251,7 +266,12 @@ test("rules support once-per-UTC-day gating and reject aggregate composition", a
         matchEvery: 2,
         oncePerUtcDay: true,
       }),
-      /oncePerUtcDay requires matchEvery to be 1/,
+      (error) => {
+        assert.ok(error instanceof GaasError);
+        assert.equal(error.code, "invalid_rule");
+        assert.equal(error.status, 400);
+        return true;
+      },
     );
   });
 });
