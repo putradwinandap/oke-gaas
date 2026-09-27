@@ -33,11 +33,11 @@ func (r *RuleRepository) Save(ctx context.Context, value *ruledomain.Rule) error
 		return fmt.Errorf("encode rule conditions: %w", err)
 	}
 	record := ruleRecord{
-		ProjectID:  value.ProjectID(),
-		ID:         value.ID(),
-		Version:    value.Version(),
-		EventType:  value.EventType(),
-		XPAmount:   value.XPAmount(),
+		ProjectID:     value.ProjectID(),
+		ID:            value.ID(),
+		Version:       value.Version(),
+		EventType:     value.EventType(),
+		XPAmount:      value.XPAmount(),
 		Conditions:    conditions,
 		MatchEvery:    value.MatchEvery(),
 		OncePerUTCDay: value.OncePerUTCDay(),
