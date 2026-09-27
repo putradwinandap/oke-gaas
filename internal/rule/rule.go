@@ -21,7 +21,7 @@ var (
 	ErrEventTypeTooLong  = errors.New("rule event type must not exceed 255 characters")
 	ErrInvalidXPAmount   = errors.New("rule xp amount must be greater than zero")
 	ErrInvalidConditions = errors.New("rule conditions must be valid JSON")
-	ErrInvalidMatchEvery = errors.New("rule match_every must be greater than zero")
+	ErrInvalidMatchEvery = errors.New("rule match_every must fit a positive signed 64-bit integer")
 	ErrAlreadyExists     = errors.New("rule version already exists")
 )
 
