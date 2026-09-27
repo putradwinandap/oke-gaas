@@ -17,8 +17,13 @@ func NewService(projects project.Repository, rules Repository) *Service {
 	return &Service{projects: projects, rules: rules}
 }
 
-// CreateExactXP creates version 1 of the smallest supported exact-event XP rule.
+// CreateExactXP creates version 1 of a conditionless exact-event XP rule.
 func (s *Service) CreateExactXP(ctx context.Context, projectID, eventType string, xpAmount int64) (*Rule, error) {
+	return s.CreateXP(ctx, projectID, eventType, xpAmount, nil)
+}
+
+// CreateXP creates version 1 of an exact-event XP rule with optional property conditions.
+func (s *Service) CreateXP(ctx context.Context, projectID, eventType string, xpAmount int64, conditions map[string]any) (*Rule, error) {
 	if _, err := s.projects.GetByID(ctx, projectID); err != nil {
 		return nil, fmt.Errorf("verify project: %w", err)
 	}
@@ -27,7 +32,7 @@ func (s *Service) CreateExactXP(ctx context.Context, projectID, eventType string
 	if err != nil {
 		return nil, fmt.Errorf("generate rule id: %w", err)
 	}
-	value, err := New(id, projectID, 1, eventType, xpAmount)
+	value, err := NewConditional(id, projectID, 1, eventType, xpAmount, conditions)
 	if err != nil {
 		return nil, err
 	}
