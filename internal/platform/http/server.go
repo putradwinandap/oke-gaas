@@ -118,14 +118,19 @@ func New(dependencies ...Dependencies) *fiber.App {
 			EventType  string         `json:"event_type"`
 			XP         int64          `json:"xp"`
 			Conditions map[string]any `json:"conditions"`
+			MatchEvery *uint64        `json:"match_every"`
 		}
 		if err := c.Bind().Body(&request); err != nil {
 			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
 		}
-		value, err := deps.Rules.CreateXP(ctx, projectID, request.EventType, request.XP, request.Conditions)
+		matchEvery := uint64(1)
+		if request.MatchEvery != nil {
+			matchEvery = *request.MatchEvery
+		}
+		value, err := deps.Rules.CreateAggregateXP(ctx, projectID, request.EventType, request.XP, request.Conditions, matchEvery)
 		if err != nil {
 			switch {
-			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrEventTypeTooLong), errors.Is(err, rule.ErrInvalidXPAmount), errors.Is(err, rule.ErrInvalidConditions):
+			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrEventTypeTooLong), errors.Is(err, rule.ErrInvalidXPAmount), errors.Is(err, rule.ErrInvalidConditions), errors.Is(err, rule.ErrInvalidMatchEvery):
 				return writeError(c, fiber.StatusBadRequest, "invalid_rule", err.Error())
 			case errors.Is(err, project.ErrNotFound):
 				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
@@ -138,8 +143,9 @@ func New(dependencies ...Dependencies) *fiber.App {
 			"project_id": value.ProjectID(),
 			"version":    value.Version(),
 			"event_type": value.EventType(),
-			"xp":         value.XPAmount(),
-			"conditions": value.Conditions(),
+			"xp":          value.XPAmount(),
+			"conditions":  value.Conditions(),
+			"match_every": value.MatchEvery(),
 		})
 	})
 
