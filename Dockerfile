@@ -10,8 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/oke-gaa
 
 FROM alpine:3.22.6@sha256:abd29214470819ed7667c87c1ceebc89aae766453a5b3cc09e8a52b9f796fd5a
 
-RUN apk add --no-cache ca-certificates curl \
-    && addgroup -S oke-gaas \
+RUN addgroup -S oke-gaas \
     && adduser -S -G oke-gaas oke-gaas
 
 WORKDIR /app
@@ -22,6 +21,6 @@ USER oke-gaas:oke-gaas
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl --fail --silent http://127.0.0.1:8080/health >/dev/null || exit 1
+  CMD ["busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
 
 ENTRYPOINT ["/usr/local/bin/oke-gaas"]
