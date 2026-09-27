@@ -57,7 +57,10 @@ Validate tenant/player
 Deduplicate event
       |
       v
-Evaluate rule version
+Evaluate latest rule version
+      |
+      v
+Match exact Event type + optional top-level property conditions
       |
       v
 Create Reward Grant
@@ -97,7 +100,7 @@ Important persistence properties:
 - project isolation
 - stable event identity
 - idempotent ingestion
-- version-aware rules
+- version-aware rules with optional exact top-level Event property conditions
 - auditable reward grants
 - materialized player state
 
