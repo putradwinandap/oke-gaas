@@ -49,7 +49,15 @@ The Event must first match the Rule's exact event type and all configured top-le
 
 Aggregate progress is materialized in `rule_match_counts` and updated in the same transaction as event processing, Reward Grants, and Player State. This keeps duplicate retries from advancing the counter twice and lets concurrent matching Events cross each threshold exactly once. Rule versions have independent counters so historical Rule meaning remains stable.
 
-This is not a general aggregate DSL. Arbitrary expressions, rolling windows, time-aware rules, nested property paths, and advanced compositions remain outside this slice.
+This is not a general aggregate DSL. Arbitrary expressions, rolling windows, nested property paths, and advanced compositions remain outside this slice.
+
+## Once-per-UTC-day rules
+
+The first time-aware capability is deliberately narrow: an immediate XP Rule may set `once_per_utc_day = true` to grant at most once for one Player on each UTC calendar day.
+
+The claim day is derived from the matching Event's `occurred_at`, normalized to UTC. A successful claim is persisted by Project + Player + Rule identity + Rule version + UTC day in `rule_daily_claims` inside the same transaction as Event processing, Reward Grants, and Player State. Distinct same-day Events therefore cannot double-grant, including under concurrency, while a later UTC day may grant again.
+
+This first time-aware slice does not compose with count thresholds: `once_per_utc_day = true` requires `match_every = 1`. Custom time zones, rolling windows, streak state, arbitrary schedules, and a general scheduling DSL remain out of scope.
 
 ## Reward
 
