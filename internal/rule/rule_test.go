@@ -61,26 +61,26 @@ func TestRuleMatchesEveryConfiguredTopLevelPropertyCondition(t *testing.T) {
 
 	for name, properties := range map[string]map[string]any{
 		"missing": {
-			"course_id": "course_7",
+			"course_id":  "course_7",
 			"difficulty": 1,
-			"metadata": map[string]any{"required": true},
+			"metadata":   map[string]any{"required": true},
 		},
 		"different scalar": {
-			"course_id": "course_8",
+			"course_id":  "course_8",
 			"difficulty": 1,
-			"metadata": map[string]any{"required": true},
-			"tags": []any{"go", "backend"},
+			"metadata":   map[string]any{"required": true},
+			"tags":       []any{"go", "backend"},
 		},
 		"different nested value": {
-			"course_id": "course_7",
+			"course_id":  "course_7",
 			"difficulty": 1,
-			"metadata": map[string]any{"required": false},
-			"tags": []any{"go", "backend"},
+			"metadata":   map[string]any{"required": false},
+			"tags":       []any{"go", "backend"},
 		},
 		"different array order": {
-			"course_id": "course_7",
+			"course_id":  "course_7",
 			"difficulty": 1,
-			"metadata": map[string]any{"required": true},
+			"metadata":   map[string]any{"required": true},
 			"tags": []any{"backend", "go"},
 		},
 	} {
