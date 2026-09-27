@@ -24,6 +24,12 @@ func (s *Service) CreateExactXP(ctx context.Context, projectID, eventType string
 
 // CreateXP creates version 1 of an exact-event XP rule with optional property conditions.
 func (s *Service) CreateXP(ctx context.Context, projectID, eventType string, xpAmount int64, conditions map[string]any) (*Rule, error) {
+	return s.CreateAggregateXP(ctx, projectID, eventType, xpAmount, conditions, 1)
+}
+
+// CreateAggregateXP creates version 1 of an exact-event XP rule that grants on
+// every matchEvery-th matching Event for each Player.
+func (s *Service) CreateAggregateXP(ctx context.Context, projectID, eventType string, xpAmount int64, conditions map[string]any, matchEvery uint64) (*Rule, error) {
 	if _, err := s.projects.GetByID(ctx, projectID); err != nil {
 		return nil, fmt.Errorf("verify project: %w", err)
 	}
@@ -32,7 +38,7 @@ func (s *Service) CreateXP(ctx context.Context, projectID, eventType string, xpA
 	if err != nil {
 		return nil, fmt.Errorf("generate rule id: %w", err)
 	}
-	value, err := NewConditional(id, projectID, 1, eventType, xpAmount, conditions)
+	value, err := NewAggregate(id, projectID, 1, eventType, xpAmount, conditions, matchEvery)
 	if err != nil {
 		return nil, err
 	}
