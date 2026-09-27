@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -51,4 +52,28 @@ func TestConcurrentLevelAppendKeepsOneContiguousNextLevel(t *testing.T) {
 	require.Len(t, values, 1)
 	require.Equal(t, uint64(2), values[0].Number())
 	require.Equal(t, int64(100), values[0].MinXP())
+}
+
+
+func TestLevelMigrationDownFailsClosedWhenThresholdsExist(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	ctx := context.Background()
+
+	proj, err := project.New("Rollback Levels", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, database.NewProjectRepository(db).Save(ctx, proj))
+
+	repository := database.NewLevelRepository(db)
+	_, err = repository.Append(ctx, proj.ID(), 100)
+	require.NoError(t, err)
+
+	downSQL, err := os.ReadFile("../../../migrations/000010_level_thresholds.down.sql")
+	require.NoError(t, err)
+	err = db.Exec(string(downSQL)).Error
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot roll back 000010")
+
+	var count int64
+	require.NoError(t, db.Table("level_thresholds").Where("project_id = ?", proj.ID()).Count(&count).Error)
+	require.Equal(t, int64(1), count)
 }
