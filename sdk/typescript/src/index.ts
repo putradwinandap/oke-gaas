@@ -334,9 +334,6 @@ export function createGaas(config: GaasConfig): GaasClient {
         const oncePerUtcDay = input.oncePerUtcDay === undefined
           ? false
           : requireBoolean(input.oncePerUtcDay, "oncePerUtcDay");
-        if (oncePerUtcDay && matchEvery !== 1) {
-          throw new TypeError("oncePerUtcDay requires matchEvery to be 1");
-        }
         const result = await request(
           `${projectPath}/rules`,
           {
