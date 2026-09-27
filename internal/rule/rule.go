@@ -94,11 +94,11 @@ func NewTimed(id, projectID string, version uint64, eventType string, xpAmount i
 	}
 
 	return &Rule{
-		id:         id,
-		projectID:  projectID,
-		version:    version,
-		eventType:  eventType,
-		xpAmount:   xpAmount,
+		id:            id,
+		projectID:     projectID,
+		version:       version,
+		eventType:     eventType,
+		xpAmount:      xpAmount,
 		conditions:    normalizedConditions,
 		matchEvery:    matchEvery,
 		oncePerUTCDay: oncePerUTCDay,
