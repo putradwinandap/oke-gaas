@@ -41,6 +41,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000003_rules_rewards.up.sql",
 		"../../../migrations/000004_player_state.up.sql",
 		"../../../migrations/000005_event_processing.up.sql",
+		"../../../migrations/000007_rule_conditions.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -353,7 +354,14 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 
 	rule, err := ruledomain.New("rule_historical", proj.ID(), 1, "lesson_completed", 75)
 	require.NoError(t, err)
-	require.NoError(t, NewRuleRepository(db).Save(ctx, rule))
+	require.NoError(t, db.Exec(
+		"INSERT INTO rules (project_id, id, version, event_type, xp_amount) VALUES (?, ?, ?, ?, ?)",
+		rule.ProjectID(),
+		rule.ID(),
+		rule.Version(),
+		rule.EventType(),
+		rule.XPAmount(),
+	).Error)
 
 	grant, err := rewarddomain.NewGrant(
 		"grant_historical",
