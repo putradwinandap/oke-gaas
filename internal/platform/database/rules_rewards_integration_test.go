@@ -175,7 +175,7 @@ func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, projects.Save(ctx, proj))
 
-	value, err := ruledomain.NewConditional(
+	value, err := ruledomain.NewAggregate(
 		"rule_course",
 		proj.ID(),
 		1,
@@ -186,6 +186,7 @@ func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
 			"difficulty": 1,
 			"metadata":   map[string]any{"required": true},
 		},
+		4,
 	)
 	require.NoError(t, err)
 	require.NoError(t, rules.Save(ctx, value))
@@ -195,6 +196,7 @@ func TestRuleRepositoryRoundTripsPropertyConditions(t *testing.T) {
 	require.Len(t, current, 1)
 	require.Equal(t, value.ID(), current[0].ID())
 	require.Equal(t, value.Conditions(), current[0].Conditions())
+	require.Equal(t, uint64(4), current[0].MatchEvery())
 
 	matching, err := eventdomain.New(
 		"evt_match", proj.ID(), "player_1", "lesson_completed",
