@@ -14,25 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func seedDailyRuleFixture(t *testing.T, xp int64) (*project.Project, *player.Player, *ruledomain.Rule) {
-	t.Helper()
-	db := openProgressionIntegrationDatabase(t)
-	ctx := context.Background()
-
-	proj, err := project.New("Daily Learning", time.Now())
-	require.NoError(t, err)
-	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
-
-	pl, err := player.New(proj.ID(), "daily-player", time.Now())
-	require.NoError(t, err)
-	require.NoError(t, NewPlayerRepository(db).Save(ctx, pl))
-
-	daily, err := ruledomain.NewTimed("rule_daily", proj.ID(), 1, "daily_login", xp, nil, 1, true)
-	require.NoError(t, err)
-	require.NoError(t, NewRuleRepository(db).Save(ctx, daily))
-	return proj, pl, daily
-}
-
 func TestDailyRuleGrantsOncePerUTCDayAndAgainNextDay(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
 	ctx := context.Background()
@@ -56,9 +37,24 @@ func TestDailyRuleGrantsOncePerUTCDayAndAgainNextDay(t *testing.T) {
 		return result
 	}
 
-	first := send("evt_daily_first", time.Date(2026, 9, 27, 1, 0, 0, 0, time.UTC))
+	firstOccurredAt := time.Date(2026, 9, 27, 1, 0, 0, 0, time.UTC)
+	first := send("evt_daily_first", firstOccurredAt)
 	require.Len(t, first.Grants, 1)
 	require.Equal(t, int64(25), first.State.XP())
+
+	retry, err := service.Process(ctx, eventdomain.IngestCommand{
+		ID: "evt_daily_first", ProjectID: proj.ID(), PlayerID: pl.ID(), Type: "daily_login", OccurredAt: firstOccurredAt,
+	})
+	require.NoError(t, err)
+	require.True(t, retry.Duplicate)
+	require.Len(t, retry.Grants, 1)
+	require.Equal(t, int64(25), retry.State.XP())
+
+	var firstDayClaims int64
+	require.NoError(t, db.Table("rule_daily_claims").
+		Where("project_id = ? AND player_id = ? AND rule_id = ?", proj.ID(), pl.ID(), daily.ID()).
+		Count(&firstDayClaims).Error)
+	require.Equal(t, int64(1), firstDayClaims)
 
 	second := send("evt_daily_second", time.Date(2026, 9, 27, 23, 59, 0, 0, time.UTC))
 	require.Empty(t, second.Grants)
