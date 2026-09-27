@@ -97,11 +97,11 @@ func Restore(id, projectID string, version uint64, eventType string, xpAmount in
 	return NewAggregate(id, projectID, version, eventType, xpAmount, conditions, matchEvery)
 }
 
-func (r Rule) ID() string        { return r.id }
-func (r Rule) ProjectID() string { return r.projectID }
-func (r Rule) Version() uint64   { return r.version }
-func (r Rule) EventType() string { return r.eventType }
-func (r Rule) XPAmount() int64   { return r.xpAmount }
+func (r Rule) ID() string         { return r.id }
+func (r Rule) ProjectID() string  { return r.projectID }
+func (r Rule) Version() uint64    { return r.version }
+func (r Rule) EventType() string  { return r.eventType }
+func (r Rule) XPAmount() int64    { return r.xpAmount }
 func (r Rule) MatchEvery() uint64 { return r.matchEvery }
 
 // Conditions returns a deep copy of the exact top-level property conditions.
