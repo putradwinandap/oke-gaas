@@ -326,3 +326,69 @@ func TestRESTConditionalRuleRewardsOnlyMatchingProperties(t *testing.T) {
 	require.Len(t, matchBody["grants"].([]any), 1)
 	require.Equal(t, float64(100), matchBody["state"].(map[string]any)["xp"])
 }
+
+func TestRESTAggregateRuleRewardsEveryNthMatchingEvent(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+
+	projectID, apiKey := createProjectViaAPI(t, app, "Aggregate Learning")
+	resp, playerBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey,
+		map[string]any{"external_id": "student-aggregate"},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	playerID := playerBody["id"].(string)
+
+	resp, ruleBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey,
+		map[string]any{
+			"event_type":  "lesson_completed",
+			"xp":          250,
+			"match_every": 2,
+			"conditions":  map[string]any{"course_id": "course_7"},
+		},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, float64(2), ruleBody["match_every"])
+	ruleID := ruleBody["id"].(string)
+
+	send := func(eventID, courseID string) (*http.Response, map[string]any) {
+		return requestJSON(t, app, http.MethodPost,
+			fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey,
+			map[string]any{
+				"event_id":    eventID,
+				"player_id":   playerID,
+				"type":        "lesson_completed",
+				"occurred_at": time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano),
+				"properties":  map[string]any{"course_id": courseID},
+			},
+		)
+	}
+
+	resp, miss := send("evt_aggregate_miss", "course_8")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Empty(t, miss["grants"].([]any))
+
+	resp, first := send("evt_aggregate_1", "course_7")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Empty(t, first["grants"].([]any))
+	require.Equal(t, float64(0), first["state"].(map[string]any)["xp"])
+
+	resp, second := send("evt_aggregate_2", "course_7")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Len(t, second["grants"].([]any), 1)
+	require.Equal(t, float64(250), second["state"].(map[string]any)["xp"])
+
+	resp, retry := send("evt_aggregate_2", "course_7")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, true, retry["duplicate"])
+	require.Len(t, retry["grants"].([]any), 1)
+	require.Equal(t, float64(250), retry["state"].(map[string]any)["xp"])
+
+	var count uint64
+	require.NoError(t, db.Table("rule_match_counts").
+		Select("match_count").
+		Where("project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?", projectID, playerID, ruleID, 1).
+		Scan(&count).Error)
+	require.Equal(t, uint64(2), count)
+}
