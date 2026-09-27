@@ -57,6 +57,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000004_player_state.up.sql",
 		"../../../migrations/000005_event_processing.up.sql",
 		"../../../migrations/000006_project_api_keys.up.sql",
+		"../../../migrations/000007_rule_conditions.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
