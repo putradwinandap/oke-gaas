@@ -11,6 +11,8 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/event"
 )
 
+const maxMatchEvery = uint64(1<<63 - 1)
+
 var (
 	ErrInvalidID         = errors.New("rule id is required")
 	ErrInvalidProjectID  = errors.New("project id is required")
@@ -70,7 +72,7 @@ func NewAggregate(id, projectID string, version uint64, eventType string, xpAmou
 	if xpAmount <= 0 {
 		return nil, ErrInvalidXPAmount
 	}
-	if matchEvery == 0 {
+	if matchEvery == 0 || matchEvery > maxMatchEvery {
 		return nil, ErrInvalidMatchEvery
 	}
 
