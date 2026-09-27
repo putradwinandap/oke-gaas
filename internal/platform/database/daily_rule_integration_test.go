@@ -130,6 +130,39 @@ func TestConcurrentSameDayEventsGrantDailyRuleOnce(t *testing.T) {
 	require.Equal(t, int64(1), claims)
 }
 
+func TestDailyClaimNormalizesOffsetTimestampToUTCDay(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+
+	proj, err := project.New("Offset Daily", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+	pl, err := player.New(proj.ID(), "offset-daily-player", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, pl))
+	daily, err := ruledomain.NewTimed("rule_daily_offset", proj.ID(), 1, "daily_login", 25, nil, 1, true)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, daily))
+
+	pacific := time.FixedZone("UTC-7", -7*60*60)
+	occurredAt := time.Date(2026, 9, 27, 23, 30, 0, 0, pacific)
+	claimed, err := NewRuleDailyClaimRepository(db).Claim(
+		ctx, proj.ID(), pl.ID(), daily.ID(), daily.Version(), occurredAt,
+	)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	var claimDay string
+	require.NoError(t, db.Table("rule_daily_claims").
+		Select("claim_day::text").
+		Where(
+			"project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?",
+			proj.ID(), pl.ID(), daily.ID(), daily.Version(),
+		).
+		Scan(&claimDay).Error)
+	require.Equal(t, "2026-09-28", claimDay)
+}
+
 func TestDailyClaimRejectsCrossProjectScope(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
 	ctx := context.Background()
