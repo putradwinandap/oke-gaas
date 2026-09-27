@@ -174,10 +174,10 @@ func (t *coordinatedProgressionTransactor) WithinTransaction(
 ) error {
 	return t.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(progression.Work{
-			Players:  NewPlayerRepository(tx),
-			Events:   NewEventRepository(tx),
-			Rules:    NewRuleRepository(tx),
-			Grants:   NewRewardGrantRepository(tx),
+			Players: NewPlayerRepository(tx),
+			Events:  NewEventRepository(tx),
+			Rules:   NewRuleRepository(tx),
+			Grants:  NewRewardGrantRepository(tx),
 			Counters: &coordinatedAggregateCounter{
 				base:        NewRuleMatchCounter(tx),
 				coordinator: t.coordinator,
