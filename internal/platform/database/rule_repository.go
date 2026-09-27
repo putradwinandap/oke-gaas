@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	ruledomain "github.com/putradwinandap/oke-gaas/internal/rule"
 	"gorm.io/gorm"
