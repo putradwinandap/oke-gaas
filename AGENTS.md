@@ -133,7 +133,7 @@ internal/access/             Project API-key authentication boundary + repositor
 internal/project/            Project domain + application service + repository interface
 internal/player/             Player domain + application service + repository interface
 internal/event/              External Event domain + idempotent ingestion service + repository interface
-internal/rule/               Versioned exact-event XP Rule domain + repository interface
+internal/rule/               Versioned exact-event XP Rule domain with optional exact top-level property conditions + repository interface
 internal/reward/             Auditable XP Reward Grant domain + evaluation service + repository interface
 internal/progression/          Materialized Player State + transactional Event -> Reward -> State orchestration
 internal/platform/database/  GORM/PostgreSQL records, queries, transactions, and migrations
@@ -438,6 +438,8 @@ lesson_completed -> +50 XP    rule version 2
 Historical reward records must be traceable to the specific rule version that produced them.
 
 For the initial rule model, the highest persisted version of a given `rule_id` is the active version. Older versions remain immutable for auditability and must not be evaluated alongside the current version.
+
+Rules may optionally require exact matches on top-level Event properties. Every configured condition must match. Condition values use JSON value semantics, including exact object/array structure and numeric-value equivalence. Nested property paths, comparison operators, aggregates, time-aware expressions, advanced compositions, and a general DSL remain out of scope until concrete use cases justify them.
 
 At minimum, reward history should be able to identify:
 
