@@ -23,12 +23,12 @@ type DailyClaimer interface {
 
 // Service evaluates matching rules and records auditable grants.
 type Service struct {
-	rules   rule.Repository
-	grants  Repository
+	rules       rule.Repository
+	grants      Repository
 	counter     MatchCounter
 	dailyClaims DailyClaimer
 	now         func() time.Time
-	newID   func() (string, error)
+	newID       func() (string, error)
 }
 
 func NewService(rules rule.Repository, grants Repository, counters ...MatchCounter) *Service {
