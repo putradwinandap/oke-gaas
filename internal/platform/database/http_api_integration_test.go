@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/level"
 	database "github.com/putradwinandap/oke-gaas/internal/platform/database"
 	httpserver "github.com/putradwinandap/oke-gaas/internal/platform/http"
 	"github.com/putradwinandap/oke-gaas/internal/player"
@@ -44,6 +45,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"rule_daily_claims",
 		"rule_match_counts",
 		"player_states",
+		"level_thresholds",
 		"reward_grants",
 		"rules",
 		"events",
@@ -62,6 +64,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000007_rule_conditions.up.sql",
 		"../../../migrations/000008_rule_match_counts.up.sql",
 		"../../../migrations/000009_rule_daily_claims.up.sql",
+		"../../../migrations/000010_level_thresholds.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -78,6 +81,7 @@ func newHTTPIntegrationApp(db *gorm.DB) *fiber.App {
 	return httpserver.New(httpserver.Dependencies{
 		Projects: project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
 		Players:  player.NewService(projects, players),
+		Levels:   level.NewService(projects, database.NewLevelRepository(db)),
 		Rules:    rule.NewService(projects, rules),
 		Progress: progression.NewService(database.NewProgressionTransactor(db)),
 		States:   database.NewPlayerStateRepository(db),
@@ -164,6 +168,7 @@ func TestRESTVerticalSliceProcessesDuplicateEventExactlyOnce(t *testing.T) {
 	require.Equal(t, false, first["duplicate"])
 	firstState := first["state"].(map[string]any)
 	require.Equal(t, float64(100), firstState["xp"])
+	require.Equal(t, float64(1), firstState["level"])
 
 	resp, duplicate := requestJSON(t, app, http.MethodPost,
 		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, eventBody,
@@ -172,6 +177,7 @@ func TestRESTVerticalSliceProcessesDuplicateEventExactlyOnce(t *testing.T) {
 	require.Equal(t, true, duplicate["duplicate"])
 	duplicateState := duplicate["state"].(map[string]any)
 	require.Equal(t, float64(100), duplicateState["xp"])
+	require.Equal(t, float64(1), duplicateState["level"])
 
 	conflictBody := map[string]any{
 		"event_id":    "evt_lesson_1",
@@ -192,6 +198,7 @@ func TestRESTVerticalSliceProcessesDuplicateEventExactlyOnce(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, float64(100), state["xp"])
+	require.Equal(t, float64(1), state["level"])
 }
 
 func TestProjectAPIKeyCannotCrossTenantBoundary(t *testing.T) {
@@ -470,4 +477,106 @@ func TestRESTDailyRuleRewardsAtMostOncePerUTCDay(t *testing.T) {
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	require.Len(t, nextDay["grants"].([]any), 1)
 	require.Equal(t, float64(50), nextDay["state"].(map[string]any)["xp"])
+}
+
+
+func TestRESTXPLevelsAreProjectScopedAndDerivedFromXP(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+
+	projectID, apiKey := createProjectViaAPI(t, app, "Leveled Learning")
+	otherProjectID, otherKey := createProjectViaAPI(t, app, "Other Learning")
+
+	resp, created := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/levels", projectID), apiKey,
+		map[string]any{"min_xp": 100},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, float64(2), created["number"])
+	require.Equal(t, float64(100), created["min_xp"])
+
+	resp, created = requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/levels", projectID), apiKey,
+		map[string]any{"min_xp": 250},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, float64(3), created["number"])
+
+	resp, invalid := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/levels", projectID), apiKey,
+		map[string]any{"min_xp": 200},
+	)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, "invalid_level", invalid["error"].(map[string]any)["code"])
+
+	resp, listed := requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/levels", projectID), apiKey, nil,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, []any{
+		map[string]any{"number": float64(1), "min_xp": float64(0)},
+		map[string]any{"number": float64(2), "min_xp": float64(100)},
+		map[string]any{"number": float64(3), "min_xp": float64(250)},
+	}, listed["levels"])
+
+	resp, otherLevels := requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/levels", otherProjectID), otherKey, nil,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, []any{
+		map[string]any{"number": float64(1), "min_xp": float64(0)},
+	}, otherLevels["levels"])
+
+	resp, _ = requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/levels", projectID), otherKey, nil,
+	)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	resp, playerBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey,
+		map[string]any{"external_id": "level-player"},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	playerID := playerBody["id"].(string)
+
+	resp, _ = requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey,
+		map[string]any{"event_type": "lesson_completed", "xp": 100},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	event := map[string]any{
+		"event_id":    "evt_level_1",
+		"player_id":   playerID,
+		"type":        "lesson_completed",
+		"occurred_at": time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	resp, first := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, event,
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, float64(100), first["state"].(map[string]any)["xp"])
+	require.Equal(t, float64(2), first["state"].(map[string]any)["level"])
+
+	event["event_id"] = "evt_level_2"
+	resp, second := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, event,
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, float64(200), second["state"].(map[string]any)["xp"])
+	require.Equal(t, float64(2), second["state"].(map[string]any)["level"])
+
+	event["event_id"] = "evt_level_3"
+	resp, third := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, event,
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, float64(300), third["state"].(map[string]any)["xp"])
+	require.Equal(t, float64(3), third["state"].(map[string]any)["level"])
+
+	resp, state := requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/players/%s/state", projectID, playerID), apiKey, nil,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, float64(3), state["level"])
 }
