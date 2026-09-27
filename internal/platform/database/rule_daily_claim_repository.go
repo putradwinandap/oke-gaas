@@ -37,8 +37,7 @@ func (r *RuleDailyClaimRepository) Claim(
 		return false, fmt.Errorf("claim rule UTC day: occurred_at is required")
 	}
 
-	utc := occurredAt.UTC()
-	claimDay := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+	claimDay := occurredAt.UTC().Format("2006-01-02")
 	claimedAt := time.Now().UTC().Truncate(time.Microsecond)
 
 	result := r.db.WithContext(ctx).Exec(
