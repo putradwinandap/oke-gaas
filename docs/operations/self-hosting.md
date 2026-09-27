@@ -22,12 +22,12 @@ Create a local `.env` file for Docker Compose. Do not commit it.
 ```dotenv
 POSTGRES_DB=oke_gaas
 POSTGRES_USER=oke_gaas
-POSTGRES_PASSWORD=replace-with-32-plus-random-url-safe-characters
-OKE_GAAS_ADMIN_API_KEY=replace-with-at-least-32-random-non-whitespace-characters
+POSTGRES_PASSWORD=
+OKE_GAAS_ADMIN_API_KEY=
 OKE_GAAS_HTTP_PORT=8080
 ```
 
-Generate secrets with an appropriate cryptographically secure password/secret generator. Because the baseline constructs PostgreSQL connection URIs from `POSTGRES_PASSWORD`, keep that value to URL-unreserved characters (`A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`) and use at least 32 random characters. Project API keys are provisioned by the API and are returned only at Project creation.
+Both secret values are intentionally blank in `.env.example`. Docker Compose uses required-variable expansion and refuses to render/start the stack while either value is empty, preventing the checked-in example from becoming a usable credential. Generate secrets with an appropriate cryptographically secure password/secret generator. Because the baseline constructs PostgreSQL connection URIs from `POSTGRES_PASSWORD`, keep that value to URL-unreserved characters (`A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`) and use at least 32 random characters. `OKE_GAAS_ADMIN_API_KEY` must also contain at least 32 non-whitespace characters. Project API keys are provisioned by the API and are returned only at Project creation.
 
 ## Start the stack
 
@@ -62,7 +62,7 @@ Override the host port with `OKE_GAAS_HTTP_PORT`.
 
 ## Migration operations
 
-The Compose baseline pins the migration runner to `migrate/migrate:v4.19.1`.
+The Compose baseline pins the migration runner to `migrate/migrate:v4.19.1` and pins all self-hosting/base images by immutable digest. Human-readable version tags remain beside the digests so upgrades are explicit and reviewable; the digest is the reproducibility boundary actually selected by the container runtime.
 
 Normal deployment order:
 
@@ -143,3 +143,7 @@ A production deployment should additionally provide, as appropriate:
 - a controlled deployment/rollback process
 
 Those capabilities should be added only through explicit operational decisions and concrete requirements.
+
+## Self-hosting verification
+
+The gated CI job runs `scripts/verify-self-hosting.sh`. The script validates Compose rendering, builds the API image, starts the complete stack, waits for `/health`, verifies the API process is non-root, and creates a Project through the authenticated REST API. This exercises the database health -> migrations -> API dependency chain on the reviewed revision.
