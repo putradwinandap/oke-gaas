@@ -30,6 +30,8 @@ export interface CreateRuleInput {
   conditions?: Record<string, unknown>;
   /** Grant on every Nth matching Event for each Player. Defaults to 1. */
   matchEvery?: number;
+  /** Grant at most once per UTC calendar day, based on occurredAt. Defaults to false. */
+  oncePerUtcDay?: boolean;
 }
 
 export interface Rule {
@@ -40,6 +42,7 @@ export interface Rule {
   xp: number;
   conditions: Record<string, unknown>;
   matchEvery: number;
+  oncePerUtcDay: boolean;
 }
 
 export interface TrackInput {
@@ -99,6 +102,7 @@ interface ApiRule {
   xp: number;
   conditions: Record<string, unknown>;
   match_every: number;
+  once_per_utc_day: boolean;
 }
 
 interface ApiRewardGrant {
@@ -327,11 +331,23 @@ export function createGaas(config: GaasConfig): GaasClient {
         const matchEvery = input.matchEvery === undefined
           ? 1
           : requirePositiveSafeInteger(input.matchEvery, "matchEvery");
+        const oncePerUtcDay = input.oncePerUtcDay === undefined
+          ? false
+          : requireBoolean(input.oncePerUtcDay, "oncePerUtcDay");
+        if (oncePerUtcDay && matchEvery !== 1) {
+          throw new TypeError("oncePerUtcDay requires matchEvery to be 1");
+        }
         const result = await request(
           `${projectPath}/rules`,
           {
             method: "POST",
-            body: stringifyJson({ event_type: eventType, xp, conditions: input.conditions ?? {}, match_every: matchEvery }),
+            body: stringifyJson({
+              event_type: eventType,
+              xp,
+              conditions: input.conditions ?? {},
+              match_every: matchEvery,
+              once_per_utc_day: oncePerUtcDay,
+            }),
           },
           options,
         );
@@ -340,6 +356,7 @@ export function createGaas(config: GaasConfig): GaasClient {
         requireResponseInvariant(value.event_type === eventType, result.status);
         requireResponseInvariant(value.xp === xp, result.status);
         requireResponseInvariant(value.match_every === matchEvery, result.status);
+        requireResponseInvariant(value.once_per_utc_day === oncePerUtcDay, result.status);
         return {
           id: value.id,
           projectId: value.project_id,
@@ -348,6 +365,7 @@ export function createGaas(config: GaasConfig): GaasClient {
           xp: value.xp,
           conditions: value.conditions,
           matchEvery: value.match_every,
+          oncePerUtcDay: value.once_per_utc_day,
         };
       },
     },
@@ -364,6 +382,13 @@ function requireNonEmpty(value: string, name: string): string {
 function requirePositiveSafeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new TypeError(`${name} must be a positive safe integer`);
+  }
+  return value;
+}
+
+function requireBoolean(value: boolean, name: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new TypeError(`${name} must be a boolean`);
   }
   return value;
 }
@@ -516,7 +541,8 @@ function isApiRule(value: unknown): value is ApiRule {
     && typeof value.event_type === "string"
     && isPositiveSafeInteger(value.xp)
     && isRecord(value.conditions)
-    && isPositiveSafeInteger(value.match_every);
+    && isPositiveSafeInteger(value.match_every)
+    && typeof value.once_per_utc_day === "boolean";
 }
 
 function isApiRewardGrant(value: unknown): value is ApiRewardGrant {
