@@ -227,11 +227,12 @@ Rules:
 - local development and tests may use `AutoMigrateCoreForDevelopment` for convenience
 - production startup must not call GORM `AutoMigrate`
 - production deployments must apply versioned migrations as an explicit deployment step before running code that depends on the new schema
+- the self-hosting baseline pins `migrate/migrate:v4.19.1` and must not start the API until the migration job succeeds
 - destructive or irreversible migrations require an explicit rollback/forward-fix plan
 
 GORM model tags remain useful mapping metadata, but they are not the production migration source of truth.
 
-See `docs/decisions/003-versioned-database-migrations.md`.
+See `docs/decisions/003-versioned-database-migrations.md` and `docs/operations/self-hosting.md`.
 
 ### 4.5 Go-specific baseline
 
@@ -867,6 +868,30 @@ Do not leave stale completed branches or completed issues open without a reason.
 
 ---
 
+## 20.2 Self-hosting operations baseline
+
+The initial self-hosting deployment is Docker Compose with one PostgreSQL service, one one-shot migration job, and one API service.
+
+Operational rules:
+
+- the API image must run as a non-root user
+- self-hosting/base container images must use explicit human-readable versions plus immutable digests; floating tags are not sufficient for the reproducible baseline
+- runtime image builds must avoid mutable package-manager network installs unless package artifacts/versions are explicitly locked by a reviewed mechanism
+- no real secret may be committed to the repository or baked into the image
+- connection-string components must be encoded safely; the Compose baseline therefore requires a long URL-unreserved PostgreSQL password because it interpolates that secret into PostgreSQL URIs
+- PostgreSQL data must live on persistent storage, but persistent storage is not a substitute for backups
+- production/self-host startup order is database health -> ordered migration success -> API start
+- the API process must not run GORM `AutoMigrate`
+- backup and restore procedures must be documented and periodically testable
+- restore into an active database is destructive and requires stopping writes plus preserving a verified pre-restore backup
+- the checked-in environment example must not contain a usable operator/database secret; required Compose secrets must fail closed when unset or empty
+- gated CI must exercise Compose rendering, image build, migration-before-API startup, API health, non-root runtime, and one authenticated persistence-backed request
+- Compose is a self-hosting baseline, not a complete internet-facing production platform; TLS, secret management, resource policy, monitored backups, and observability require explicit deployment decisions
+
+See `docs/operations/self-hosting.md`.
+
+---
+
 ## 21. Documentation Rules
 
 Documentation is part of the implementation.
@@ -900,4 +925,4 @@ When product detail becomes durable technical knowledge, move the technical expl
 
 When context is limited, preserve at least this:
 
-> Oke Gaas uses Go with Fiber v3, GORM, and PostgreSQL in an event-driven modular monolith with lightweight DDD and synchronous processing first. The initial REST API uses an operator key for Project provisioning and hashed per-Project bearer keys for Project-scoped operations. The canonical domain flow is **Event -> Rule -> Reward -> Player State**. Use **Player** for gamified end users. Project is the tenant/isolation boundary. Events require stable identity and idempotent ingestion. Rewards must produce an auditable reward ledger and rules are version-aware. Preserve transactional consistency between event processing, reward grants, and player state. Do not introduce microservices, a message broker, or full Event Sourcing without a concrete requirement. Unit tests are mandatory. Maintain code/style consistency, update AGENTS.md whenever architecture or engineering consistency changes, and after merge delete completed branches and update/close the related issue.
+> Oke Gaas uses Go with Fiber v3, GORM, and PostgreSQL in an event-driven modular monolith with lightweight DDD and synchronous processing first. The initial self-hosting baseline uses Docker Compose with PostgreSQL, a pinned one-shot migration runner, and a non-root API container; ordered migrations must complete before API startup. The initial REST API uses an operator key for Project provisioning and hashed per-Project bearer keys for Project-scoped operations. The canonical domain flow is **Event -> Rule -> Reward -> Player State**. Use **Player** for gamified end users. Project is the tenant/isolation boundary. Events require stable identity and idempotent ingestion. Rewards must produce an auditable reward ledger and rules are version-aware. Preserve transactional consistency between event processing, reward grants, and player state. Do not introduce microservices, a message broker, or full Event Sourcing without a concrete requirement. Unit tests are mandatory. Maintain code/style consistency, update AGENTS.md whenever architecture or engineering consistency changes, and after merge delete completed branches and update/close the related issue.

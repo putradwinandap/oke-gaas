@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+.env
+.env.*
+!/.env.example
+sdk
+examples
+docs
+*.md

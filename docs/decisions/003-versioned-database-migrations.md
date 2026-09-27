@@ -23,7 +23,7 @@ migrations/
 
 Future changes increment the numeric prefix and are applied in order.
 
-The repository does not yet lock a migration runner. A deployment may use a compatible SQL migration tool, but the migration files in this repository are the production schema source of truth.
+The self-hosting baseline uses `migrate/migrate:v4.19.1` pinned by immutable image digest as the migration runner. The migration files in this repository remain the production schema source of truth; changing the runner or its pinned version is an explicit operational change and must preserve the same ordered-migration semantics.
 
 GORM `AutoMigrate` is limited to local development and automated tests through `AutoMigrateCoreForDevelopment`. Production application startup must not call it.
 
@@ -43,8 +43,10 @@ When application behavior maps a database error by constraint name, the relevant
 
 - schema changes require maintaining SQL alongside GORM mapping metadata
 - contributors must keep ORM records and migrations consistent
-- a concrete migration runner still needs to be selected when deployment automation is introduced
+- the migration runner is now another pinned operational dependency that must be maintained deliberately
 
 ## Operational rule
 
-Apply migrations as an explicit deployment step before starting application code that depends on the new schema. Do not edit a migration after it has been applied to a shared environment; create a new migration instead.
+Apply migrations as an explicit deployment step before starting application code that depends on the new schema. The Docker Compose baseline enforces `PostgreSQL healthy -> migration job successful -> API start`. Do not edit a migration after it has been applied to a shared environment; create a new migration instead.
+
+See `docs/operations/self-hosting.md` for the concrete self-hosting migration, backup, and restore procedure.

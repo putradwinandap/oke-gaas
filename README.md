@@ -40,6 +40,19 @@ GET /health
 
 Apply the ordered SQL migrations under `migrations/` before starting the API against a fresh database. The currently implemented REST surface is documented in `docs/api/openapi.yaml`.
 
+### Docker self-hosting
+
+The repository includes a Docker Compose baseline that starts PostgreSQL, applies ordered migrations through a one-shot migration job, and starts the API only after migrations succeed.
+
+```bash
+cp .env.example .env
+# set POSTGRES_PASSWORD and OKE_GAAS_ADMIN_API_KEY in .env
+# Compose refuses to start while either required secret is empty
+docker compose up --build
+```
+
+See [the self-hosting and operations runbook](./docs/operations/self-hosting.md) for migration order, backup, restore, and production-hardening guidance.
+
 ### Configuration
 
 Copy `.env.example` as a reference for supported environment variables.
