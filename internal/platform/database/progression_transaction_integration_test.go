@@ -390,8 +390,6 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 	require.Equal(t, int64(1), claimCount)
 }
 
-
-
 func TestAggregateCounterRollsBackWhenPlayerStateUpdateFails(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
 	ctx := context.Background()
