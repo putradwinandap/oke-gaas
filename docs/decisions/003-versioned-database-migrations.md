@@ -23,7 +23,7 @@ migrations/
 
 Future changes increment the numeric prefix and are applied in order.
 
-The self-hosting baseline uses the pinned `migrate/migrate:v4.19.0` container as the migration runner. The migration files in this repository remain the production schema source of truth; changing the runner or its pinned version is an explicit operational change and must preserve the same ordered-migration semantics.
+The self-hosting baseline uses the pinned `migrate/migrate:v4.19.1` container as the migration runner. The migration files in this repository remain the production schema source of truth; changing the runner or its pinned version is an explicit operational change and must preserve the same ordered-migration semantics.
 
 GORM `AutoMigrate` is limited to local development and automated tests through `AutoMigrateCoreForDevelopment`. Production application startup must not call it.
 
