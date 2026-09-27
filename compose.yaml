@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17.10-alpine3.22@sha256:b02d9b5bcf608c2719da32cdabee274a33841202487fd5dc9b065b63f886753f
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-oke_gaas}
       POSTGRES_USER: ${POSTGRES_USER:-oke_gaas}
@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: migrate/migrate:v4.19.1
+    image: migrate/migrate:v4.19.1@sha256:cc4ad8e19d66791e3689405d9a028ce6e9614f32032db14acda1469f7201d6e4
     depends_on:
       postgres:
         condition: service_healthy
