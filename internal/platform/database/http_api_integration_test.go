@@ -408,7 +408,6 @@ func TestRESTAggregateRuleRewardsEveryNthMatchingEvent(t *testing.T) {
 	require.Equal(t, uint64(2), count)
 }
 
-
 func TestRESTDailyRuleRewardsAtMostOncePerUTCDay(t *testing.T) {
 	db := openHTTPIntegrationDatabase(t)
 	app := newHTTPIntegrationApp(db)
