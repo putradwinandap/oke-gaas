@@ -389,3 +389,130 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 		Count(&claimCount).Error)
 	require.Equal(t, int64(1), claimCount)
 }
+
+
+func TestAggregateRuleConcurrentEventsCrossThresholdOnce(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+
+	proj, err := project.New("Aggregate Learning", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+
+	pl, err := player.New(proj.ID(), "aggregate-player", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, pl))
+
+	aggregate, err := ruledomain.NewAggregate(
+		"rule_aggregate",
+		proj.ID(),
+		1,
+		"lesson_completed",
+		100,
+		nil,
+		2,
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, aggregate))
+
+	service := progression.NewService(NewProgressionTransactor(db))
+	commands := []eventdomain.IngestCommand{
+		{
+			ID:         "evt_aggregate_a",
+			ProjectID:  proj.ID(),
+			PlayerID:   pl.ID(),
+			Type:       "lesson_completed",
+			OccurredAt: time.Now().Add(-2 * time.Minute),
+		},
+		{
+			ID:         "evt_aggregate_b",
+			ProjectID:  proj.ID(),
+			PlayerID:   pl.ID(),
+			Type:       "lesson_completed",
+			OccurredAt: time.Now().Add(-time.Minute),
+		},
+	}
+
+	results := make(chan *progression.ProcessResult, len(commands))
+	errs := make(chan error, len(commands))
+	var wg sync.WaitGroup
+	wg.Add(len(commands))
+	for _, command := range commands {
+		command := command
+		go func() {
+			defer wg.Done()
+			result, err := service.Process(ctx, command)
+			results <- result
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	var granted int
+	for result := range results {
+		require.NotNil(t, result)
+		granted += len(result.Grants)
+	}
+	require.Equal(t, 1, granted)
+
+	state, err := NewPlayerStateRepository(db).Get(ctx, proj.ID(), pl.ID())
+	require.NoError(t, err)
+	require.Equal(t, int64(100), state.XP())
+
+	var matchCount uint64
+	require.NoError(t, db.Table("rule_match_counts").
+		Select("match_count").
+		Where(
+			"project_id = ? AND player_id = ? AND rule_id = ? AND rule_version = ?",
+			proj.ID(), pl.ID(), aggregate.ID(), aggregate.Version(),
+		).
+		Scan(&matchCount).Error)
+	require.Equal(t, uint64(2), matchCount)
+
+	var grantCount int64
+	require.NoError(t, db.Table("reward_grants").
+		Where("project_id = ? AND player_id = ? AND rule_id = ?", proj.ID(), pl.ID(), aggregate.ID()).
+		Count(&grantCount).Error)
+	require.Equal(t, int64(1), grantCount)
+}
+
+func TestRuleMatchCounterRejectsCrossProjectScope(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+
+	projectA, err := project.New("Project A", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, projectA))
+
+	projectB, err := project.New("Project B", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, projectB))
+
+	playerA, err := player.New(projectA.ID(), "player-a", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, playerA))
+
+	ruleA, err := ruledomain.NewAggregate("rule_a", projectA.ID(), 1, "lesson_completed", 100, nil, 2)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, ruleA))
+
+	_, err = NewRuleMatchCounter(db).Increment(
+		ctx,
+		projectB.ID(),
+		playerA.ID(),
+		ruleA.ID(),
+		ruleA.Version(),
+		time.Now(),
+	)
+	require.Error(t, err)
+
+	var count int64
+	require.NoError(t, db.Table("rule_match_counts").Count(&count).Error)
+	require.Zero(t, count)
+}
