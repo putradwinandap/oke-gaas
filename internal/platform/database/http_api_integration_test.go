@@ -479,7 +479,6 @@ func TestRESTDailyRuleRewardsAtMostOncePerUTCDay(t *testing.T) {
 	require.Equal(t, float64(50), nextDay["state"].(map[string]any)["xp"])
 }
 
-
 func TestRESTXPLevelsAreProjectScopedAndDerivedFromXP(t *testing.T) {
 	db := openHTTPIntegrationDatabase(t)
 	app := newHTTPIntegrationApp(db)
