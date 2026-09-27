@@ -50,7 +50,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/rules:
     post:
-      summary: Create a version-1 exact-event XP rule
+      summary: Create a version-1 exact-event XP rule with optional top-level property conditions
       security: [{ ProjectBearer: [] }]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -64,6 +64,10 @@ paths:
               properties:
                 event_type: { type: string, maxLength: 255 }
                 xp: { type: integer, format: int64, minimum: 1 }
+                conditions:
+                  type: object
+                  additionalProperties: true
+                  description: Exact top-level Event property values; every configured entry must match.
       responses:
         "201": { description: Rule created }
   /v1/projects/{projectId}/events:
