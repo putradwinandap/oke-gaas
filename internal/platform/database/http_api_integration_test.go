@@ -558,6 +558,14 @@ func TestRESTXPLevelsAreProjectScopedAndDerivedFromXP(t *testing.T) {
 	require.Equal(t, float64(100), first["state"].(map[string]any)["xp"])
 	require.Equal(t, float64(2), first["state"].(map[string]any)["level"])
 
+	resp, retry := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, event,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, true, retry["duplicate"])
+	require.Equal(t, float64(100), retry["state"].(map[string]any)["xp"])
+	require.Equal(t, float64(2), retry["state"].(map[string]any)["level"])
+
 	event["event_id"] = "evt_level_2"
 	resp, second := requestJSON(t, app, http.MethodPost,
 		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, event,
