@@ -207,7 +207,7 @@ test("rules default matchEvery to one and reject invalid thresholds", async () =
     const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
     const result = await gaas.rules.create({ eventType: "daily_login", xp: 10 });
     assert.equal(result.matchEvery, 1);
-    assert.throws(
+    await assert.rejects(
       () => gaas.rules.create({ eventType: "daily_login", xp: 10, matchEvery: 0 }),
       /matchEvery/,
     );
