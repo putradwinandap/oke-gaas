@@ -30,6 +30,12 @@ func (s *Service) CreateXP(ctx context.Context, projectID, eventType string, xpA
 // CreateAggregateXP creates version 1 of an exact-event XP rule that grants on
 // every matchEvery-th matching Event for each Player.
 func (s *Service) CreateAggregateXP(ctx context.Context, projectID, eventType string, xpAmount int64, conditions map[string]any, matchEvery uint64) (*Rule, error) {
+	return s.CreateTimedXP(ctx, projectID, eventType, xpAmount, conditions, matchEvery, false)
+}
+
+// CreateTimedXP creates version 1 of an exact-event XP rule with the currently
+// supported time-aware option.
+func (s *Service) CreateTimedXP(ctx context.Context, projectID, eventType string, xpAmount int64, conditions map[string]any, matchEvery uint64, oncePerUTCDay bool) (*Rule, error) {
 	if _, err := s.projects.GetByID(ctx, projectID); err != nil {
 		return nil, fmt.Errorf("verify project: %w", err)
 	}
@@ -38,7 +44,7 @@ func (s *Service) CreateAggregateXP(ctx context.Context, projectID, eventType st
 	if err != nil {
 		return nil, fmt.Errorf("generate rule id: %w", err)
 	}
-	value, err := NewAggregate(id, projectID, 1, eventType, xpAmount, conditions, matchEvery)
+	value, err := NewTimed(id, projectID, 1, eventType, xpAmount, conditions, matchEvery, oncePerUTCDay)
 	if err != nil {
 		return nil, err
 	}
