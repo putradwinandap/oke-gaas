@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -17,6 +18,9 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/progression"
 	"github.com/putradwinandap/oke-gaas/internal/project"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const requestOperationTimeout = 10 * time.Second
@@ -36,6 +40,10 @@ type Dependencies struct {
 func New(dependencies ...Dependencies) *fiber.App {
 	app := fiber.New(fiber.Config{ErrorHandler: apiErrorHandler})
 	app.Use(recoverer.New())
+	tracer := otel.Tracer(instrumentationName)
+	meter := otel.Meter(instrumentationName)
+	app.Use(telemetryMiddleware(tracer, meter))
+	eventMetrics := newEventProcessingMetrics(meter)
 
 	app.Get("/health", func(c fiber.Ctx) error {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "ok"})
@@ -223,7 +231,9 @@ func New(dependencies ...Dependencies) *fiber.App {
 		if err := c.Bind().Body(&request); err != nil {
 			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
 		}
-		result, err := deps.Progress.Process(ctx, eventdomain.IngestCommand{
+		processCtx, span := tracer.Start(ctx, "event.process")
+		processStarted := time.Now()
+		result, err := deps.Progress.Process(processCtx, eventdomain.IngestCommand{
 			ID:         request.EventID,
 			ProjectID:  projectID,
 			PlayerID:   request.PlayerID,
@@ -231,6 +241,22 @@ func New(dependencies ...Dependencies) *fiber.App {
 			OccurredAt: request.OccurredAt,
 			Properties: request.Properties,
 		})
+		grantCount := 0
+		duplicate := false
+		if result != nil {
+			grantCount = len(result.Grants)
+			duplicate = result.Duplicate
+		}
+		eventMetrics.record(processCtx, processStarted, err, duplicate, grantCount)
+		span.SetAttributes(
+			attribute.Bool("event.duplicate", duplicate),
+			attribute.Int("reward.grant_count", grantCount),
+		)
+		if err != nil {
+			span.SetAttributes(attribute.String("error.type", fmt.Sprintf("%T", err)))
+			span.SetStatus(codes.Error, "event processing failed")
+		}
+		span.End()
 		if err != nil {
 			switch {
 			case errors.Is(err, eventdomain.ErrInvalidID):
