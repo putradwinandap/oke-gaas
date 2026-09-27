@@ -136,6 +136,9 @@ func TestRuleRequiresExplicitPositiveVersionXPAndAggregateThreshold(t *testing.T
 	_, err = NewAggregate("rule_lesson", "proj_1", 1, "lesson_completed", 100, nil, 0)
 	require.ErrorIs(t, err, ErrInvalidMatchEvery)
 
+	_, err = NewAggregate("rule_lesson", "proj_1", 1, "lesson_completed", 100, nil, maxMatchEvery+1)
+	require.ErrorIs(t, err, ErrInvalidMatchEvery)
+
 	aggregate, err := NewAggregate("rule_lesson", "proj_1", 1, "lesson_completed", 100, nil, 5)
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), aggregate.MatchEvery())
