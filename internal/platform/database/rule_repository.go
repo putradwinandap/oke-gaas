@@ -11,13 +11,13 @@ import (
 )
 
 type ruleRecord struct {
-	ProjectID  string `gorm:"type:varchar(64);primaryKey;not null"`
-	ID         string `gorm:"type:varchar(64);primaryKey;not null"`
-	Version    uint64 `gorm:"primaryKey;not null"`
-	EventType  string `gorm:"type:varchar(255);not null;index"`
-	XPAmount   int64  `gorm:"not null"`
-	Conditions []byte `gorm:"type:jsonb;not null;default:'{}'"`
-	MatchEvery     uint64 `gorm:"not null;default:1"`
+	ProjectID     string `gorm:"type:varchar(64);primaryKey;not null"`
+	ID            string `gorm:"type:varchar(64);primaryKey;not null"`
+	Version       uint64 `gorm:"primaryKey;not null"`
+	EventType     string `gorm:"type:varchar(255);not null;index"`
+	XPAmount      int64  `gorm:"not null"`
+	Conditions    []byte `gorm:"type:jsonb;not null;default:'{}'"`
+	MatchEvery    uint64 `gorm:"not null;default:1"`
 	OncePerUTCDay bool   `gorm:"not null;default:false;check:chk_rules_daily_not_aggregate,NOT once_per_utc_day OR match_every = 1"`
 }
 
