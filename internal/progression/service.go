@@ -20,9 +20,9 @@ type ProcessingClaims interface {
 
 // Work contains repositories bound to one transaction.
 type Work struct {
-	Players player.Repository
-	Events  event.Repository
-	Rules   rule.Repository
+	Players  player.Repository
+	Events   event.Repository
+	Rules    rule.Repository
 	Grants   reward.Repository
 	Counters reward.MatchCounter
 	States   Repository
