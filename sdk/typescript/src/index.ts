@@ -28,6 +28,8 @@ export interface CreateRuleInput {
   eventType: string;
   xp: number;
   conditions?: Record<string, unknown>;
+  /** Grant on every Nth matching Event for each Player. Defaults to 1. */
+  matchEvery?: number;
 }
 
 export interface Rule {
@@ -37,6 +39,7 @@ export interface Rule {
   eventType: string;
   xp: number;
   conditions: Record<string, unknown>;
+  matchEvery: number;
 }
 
 export interface TrackInput {
@@ -95,6 +98,7 @@ interface ApiRule {
   event_type: string;
   xp: number;
   conditions: Record<string, unknown>;
+  match_every: number;
 }
 
 interface ApiRewardGrant {
@@ -320,11 +324,14 @@ export function createGaas(config: GaasConfig): GaasClient {
       async create(input, options) {
         const eventType = requireNonEmpty(input.eventType, "eventType");
         const xp = requirePositiveSafeInteger(input.xp, "xp");
+        const matchEvery = input.matchEvery === undefined
+          ? 1
+          : requirePositiveSafeInteger(input.matchEvery, "matchEvery");
         const result = await request(
           `${projectPath}/rules`,
           {
             method: "POST",
-            body: stringifyJson({ event_type: eventType, xp, conditions: input.conditions ?? {} }),
+            body: stringifyJson({ event_type: eventType, xp, conditions: input.conditions ?? {}, match_every: matchEvery }),
           },
           options,
         );
@@ -332,6 +339,7 @@ export function createGaas(config: GaasConfig): GaasClient {
         requireResponseInvariant(value.project_id === projectId, result.status);
         requireResponseInvariant(value.event_type === eventType, result.status);
         requireResponseInvariant(value.xp === xp, result.status);
+        requireResponseInvariant(value.match_every === matchEvery, result.status);
         return {
           id: value.id,
           projectId: value.project_id,
@@ -339,6 +347,7 @@ export function createGaas(config: GaasConfig): GaasClient {
           eventType: value.event_type,
           xp: value.xp,
           conditions: value.conditions,
+          matchEvery: value.match_every,
         };
       },
     },
@@ -506,7 +515,8 @@ function isApiRule(value: unknown): value is ApiRule {
     && isPositiveSafeInteger(value.version)
     && typeof value.event_type === "string"
     && isPositiveSafeInteger(value.xp)
-    && isRecord(value.conditions);
+    && isRecord(value.conditions)
+    && isPositiveSafeInteger(value.match_every);
 }
 
 function isApiRewardGrant(value: unknown): value is ApiRewardGrant {
