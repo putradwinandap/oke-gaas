@@ -232,6 +232,10 @@ func TestAggregateMigrationRollbackFailsClosedWhenAggregateRulesExist(t *testing
 	require.NoError(t, err)
 	require.NoError(t, NewRuleRepository(db).Save(ctx, aggregate))
 
+	dailyDownSQL, err := os.ReadFile("../../../migrations/000009_rule_daily_claims.down.sql")
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(string(dailyDownSQL)).Error)
+
 	downSQL, err := os.ReadFile("../../../migrations/000008_rule_match_counts.down.sql")
 	require.NoError(t, err)
 
@@ -269,4 +273,65 @@ func TestAggregateMigrationRollbackFailsClosedWhenAggregateRulesExist(t *testing
 		"SELECT to_regclass(current_schema() || '.rule_match_counts') IS NOT NULL",
 	).Scan(&matchCountTableExists).Error)
 	require.False(t, matchCountTableExists)
+}
+
+
+func TestDailyRuleMigrationRollbackFailsClosedWhenDailyRulesExist(t *testing.T) {
+	db := openRulesRewardsIntegrationDatabase(t)
+	ctx := context.Background()
+
+	proj, err := project.New("Daily Rollback Safety", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+
+	daily, err := ruledomain.NewTimed(
+		"rule_daily_rollback_guard",
+		proj.ID(),
+		1,
+		"daily_login",
+		25,
+		nil,
+		1,
+		true,
+	)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, daily))
+
+	downSQL, err := os.ReadFile("../../../migrations/000009_rule_daily_claims.down.sql")
+	require.NoError(t, err)
+
+	err = db.Exec(string(downSQL)).Error
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot roll back migration 000009 while daily rules exist")
+
+	current, err := NewRuleRepository(db).ListByEventType(ctx, proj.ID(), "daily_login")
+	require.NoError(t, err)
+	require.Len(t, current, 1)
+	require.True(t, current[0].OncePerUTCDay())
+
+	require.NoError(t, db.Exec(
+		"DELETE FROM rules WHERE project_id = ? AND id = ? AND version = ?",
+		proj.ID(),
+		daily.ID(),
+		daily.Version(),
+	).Error)
+	require.NoError(t, db.Exec(string(downSQL)).Error)
+
+	var dailyColumnExists bool
+	require.NoError(t, db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'rules'
+			  AND column_name = 'once_per_utc_day'
+		)
+	`).Scan(&dailyColumnExists).Error)
+	require.False(t, dailyColumnExists)
+
+	var dailyClaimsTableExists bool
+	require.NoError(t, db.Raw(
+		"SELECT to_regclass(current_schema() || '.rule_daily_claims') IS NOT NULL",
+	).Scan(&dailyClaimsTableExists).Error)
+	require.False(t, dailyClaimsTableExists)
 }
