@@ -1,11 +1,46 @@
 #!/bin/sh
 set -eu
 
-export POSTGRES_DB="${POSTGRES_DB:-oke_gaas_ci}"
-export POSTGRES_USER="${POSTGRES_USER:-oke_gaas_ci}"
-export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-ci-database-password-0123456789abcdef}"
-export OKE_GAAS_ADMIN_API_KEY="${OKE_GAAS_ADMIN_API_KEY:-ci-admin-api-key-0123456789abcdef}"
-export OKE_GAAS_HTTP_PORT="${OKE_GAAS_HTTP_PORT:-18080}"
+POSTGRES_DB_VALUE="${POSTGRES_DB:-oke_gaas_ci}"
+POSTGRES_USER_VALUE="${POSTGRES_USER:-oke_gaas_ci}"
+POSTGRES_PASSWORD_VALUE="${POSTGRES_PASSWORD:-ci-database-password-0123456789abcdef}"
+ADMIN_API_KEY_VALUE="${OKE_GAAS_ADMIN_API_KEY:-ci-admin-api-key-0123456789abcdef}"
+HTTP_PORT_VALUE="${OKE_GAAS_HTTP_PORT:-18080}"
+
+if ! grep -qx 'POSTGRES_PASSWORD=' .env.example; then
+  echo ".env.example must keep POSTGRES_PASSWORD blank"
+  exit 1
+fi
+if ! grep -qx 'OKE_GAAS_ADMIN_API_KEY=' .env.example; then
+  echo ".env.example must keep OKE_GAAS_ADMIN_API_KEY blank"
+  exit 1
+fi
+
+if POSTGRES_DB="$POSTGRES_DB_VALUE" \
+  POSTGRES_USER="$POSTGRES_USER_VALUE" \
+  POSTGRES_PASSWORD= \
+  OKE_GAAS_ADMIN_API_KEY="$ADMIN_API_KEY_VALUE" \
+  OKE_GAAS_HTTP_PORT="$HTTP_PORT_VALUE" \
+  docker compose config >/dev/null 2>&1; then
+  echo "docker compose config unexpectedly accepted an empty POSTGRES_PASSWORD"
+  exit 1
+fi
+
+if POSTGRES_DB="$POSTGRES_DB_VALUE" \
+  POSTGRES_USER="$POSTGRES_USER_VALUE" \
+  POSTGRES_PASSWORD="$POSTGRES_PASSWORD_VALUE" \
+  OKE_GAAS_ADMIN_API_KEY= \
+  OKE_GAAS_HTTP_PORT="$HTTP_PORT_VALUE" \
+  docker compose config >/dev/null 2>&1; then
+  echo "docker compose config unexpectedly accepted an empty OKE_GAAS_ADMIN_API_KEY"
+  exit 1
+fi
+
+export POSTGRES_DB="$POSTGRES_DB_VALUE"
+export POSTGRES_USER="$POSTGRES_USER_VALUE"
+export POSTGRES_PASSWORD="$POSTGRES_PASSWORD_VALUE"
+export OKE_GAAS_ADMIN_API_KEY="$ADMIN_API_KEY_VALUE"
+export OKE_GAAS_HTTP_PORT="$HTTP_PORT_VALUE"
 
 cleanup() {
   docker compose down -v --remove-orphans >/dev/null 2>&1 || true
