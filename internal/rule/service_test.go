@@ -84,6 +84,25 @@ func TestCreateXPPreservesNormalizedConditions(t *testing.T) {
 	require.Len(t, rules.values, 1)
 }
 
+func TestCreateAggregateXPPreservesThreshold(t *testing.T) {
+	projects := &memoryProjectRepository{values: make(map[string]*project.Project)}
+	rules := &memoryRuleRepository{}
+
+	proj, err := project.New("Learning", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, projects.Save(context.Background(), proj))
+
+	service := NewService(projects, rules)
+	value, err := service.CreateAggregateXP(
+		context.Background(), proj.ID(), "lesson_completed", 250,
+		map[string]any{"course_id": "course_7"}, 5,
+	)
+	require.NoError(t, err)
+	require.Equal(t, uint64(5), value.MatchEvery())
+	require.Equal(t, "course_7", value.Conditions()["course_id"])
+	require.Len(t, rules.values, 1)
+}
+
 func TestCreateExactXPRequiresExistingProject(t *testing.T) {
 	service := NewService(
 		&memoryProjectRepository{values: make(map[string]*project.Project)},
