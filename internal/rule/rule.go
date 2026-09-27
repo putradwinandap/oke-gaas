@@ -14,13 +14,13 @@ import (
 const maxMatchEvery = uint64(1<<63 - 1)
 
 var (
-	ErrInvalidID         = errors.New("rule id is required")
-	ErrInvalidProjectID  = errors.New("project id is required")
-	ErrInvalidVersion    = errors.New("rule version must be greater than zero")
-	ErrInvalidEventType  = errors.New("rule event type is required")
-	ErrEventTypeTooLong  = errors.New("rule event type must not exceed 255 characters")
-	ErrInvalidXPAmount   = errors.New("rule xp amount must be greater than zero")
-	ErrInvalidConditions = errors.New("rule conditions must be valid JSON")
+	ErrInvalidID              = errors.New("rule id is required")
+	ErrInvalidProjectID       = errors.New("project id is required")
+	ErrInvalidVersion         = errors.New("rule version must be greater than zero")
+	ErrInvalidEventType       = errors.New("rule event type is required")
+	ErrEventTypeTooLong       = errors.New("rule event type must not exceed 255 characters")
+	ErrInvalidXPAmount        = errors.New("rule xp amount must be greater than zero")
+	ErrInvalidConditions      = errors.New("rule conditions must be valid JSON")
 	ErrInvalidMatchEvery      = errors.New("rule match_every must fit a positive signed 64-bit integer")
 	ErrIncompatibleTimeWindow = errors.New("once_per_utc_day requires match_every=1")
 	ErrAlreadyExists          = errors.New("rule version already exists")
@@ -29,13 +29,13 @@ var (
 // Rule is one immutable version of an exact-event XP rule.
 // Conditions optionally require exact matches on top-level Event properties.
 type Rule struct {
-	id         string
-	projectID  string
-	version    uint64
-	eventType  string
-	xpAmount   int64
-	conditions map[string]any
-	matchEvery     uint64
+	id            string
+	projectID     string
+	version       uint64
+	eventType     string
+	xpAmount      int64
+	conditions    map[string]any
+	matchEvery    uint64
 	oncePerUTCDay bool
 }
 
@@ -110,13 +110,13 @@ func Restore(id, projectID string, version uint64, eventType string, xpAmount in
 	return NewTimed(id, projectID, version, eventType, xpAmount, conditions, matchEvery, oncePerUTCDay)
 }
 
-func (r Rule) ID() string         { return r.id }
-func (r Rule) ProjectID() string  { return r.projectID }
-func (r Rule) Version() uint64    { return r.version }
-func (r Rule) EventType() string  { return r.eventType }
-func (r Rule) XPAmount() int64    { return r.xpAmount }
-func (r Rule) MatchEvery() uint64     { return r.matchEvery }
-func (r Rule) OncePerUTCDay() bool    { return r.oncePerUTCDay }
+func (r Rule) ID() string          { return r.id }
+func (r Rule) ProjectID() string   { return r.projectID }
+func (r Rule) Version() uint64     { return r.version }
+func (r Rule) EventType() string   { return r.eventType }
+func (r Rule) XPAmount() int64     { return r.xpAmount }
+func (r Rule) MatchEvery() uint64  { return r.matchEvery }
+func (r Rule) OncePerUTCDay() bool { return r.oncePerUTCDay }
 
 // Conditions returns a deep copy of the exact top-level property conditions.
 func (r Rule) Conditions() map[string]any { return cloneJSONObject(r.conditions) }
