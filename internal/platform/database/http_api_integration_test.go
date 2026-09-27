@@ -254,3 +254,74 @@ func TestRESTRejectsOversizedPublicInputBeforePersistence(t *testing.T) {
 	require.NoError(t, db.Table("projects").Count(&count).Error)
 	require.Zero(t, count)
 }
+
+
+func TestRESTConditionalRuleRewardsOnlyMatchingProperties(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+
+	projectID, apiKey := createProjectViaAPI(t, app, "Conditional Learning")
+
+	resp, playerBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey,
+		map[string]any{"external_id": "student-conditional"},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	playerID := playerBody["id"].(string)
+
+	resp, ruleBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey,
+		map[string]any{
+			"event_type": "lesson_completed",
+			"xp":         100,
+			"conditions": map[string]any{
+				"course_id":  "course_7",
+				"difficulty": 2,
+			},
+		},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, map[string]any{
+		"course_id":  "course_7",
+		"difficulty": float64(2),
+	}, ruleBody["conditions"])
+
+	baseEvent := map[string]any{
+		"player_id":   playerID,
+		"type":        "lesson_completed",
+		"occurred_at": time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano),
+	}
+
+	nonMatching := make(map[string]any, len(baseEvent)+2)
+	for key, value := range baseEvent {
+		nonMatching[key] = value
+	}
+	nonMatching["event_id"] = "evt_conditional_miss"
+	nonMatching["properties"] = map[string]any{
+		"course_id":  "course_7",
+		"difficulty": 1,
+	}
+	resp, missBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, nonMatching,
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Empty(t, missBody["grants"].([]any))
+	require.Equal(t, float64(0), missBody["state"].(map[string]any)["xp"])
+
+	matching := make(map[string]any, len(baseEvent)+2)
+	for key, value := range baseEvent {
+		matching[key] = value
+	}
+	matching["event_id"] = "evt_conditional_match"
+	matching["properties"] = map[string]any{
+		"course_id":  "course_7",
+		"difficulty": 2.0,
+		"extra":      "ignored",
+	}
+	resp, matchBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, matching,
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Len(t, matchBody["grants"].([]any), 1)
+	require.Equal(t, float64(100), matchBody["state"].(map[string]any)["xp"])
+}
