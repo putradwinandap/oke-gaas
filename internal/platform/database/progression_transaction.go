@@ -28,9 +28,9 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 
 	if err := t.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(progression.Work{
-			Players: NewPlayerRepository(tx),
-			Events:  NewEventRepository(tx),
-			Rules:   NewRuleRepository(tx),
+			Players:  NewPlayerRepository(tx),
+			Events:   NewEventRepository(tx),
+			Rules:    NewRuleRepository(tx),
 			Grants:   NewRewardGrantRepository(tx),
 			Counters: NewRuleMatchCounter(tx),
 			States:   NewPlayerStateRepository(tx),
