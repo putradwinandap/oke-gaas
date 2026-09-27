@@ -135,6 +135,7 @@ internal/player/             Player domain + application service + repository in
 internal/event/              External Event domain + idempotent ingestion service + repository interface
 internal/rule/               Versioned exact-event XP Rule domain with optional exact top-level property conditions, count thresholds, and once-per-UTC-day gating + repository interface
 internal/reward/             Auditable XP Reward Grant domain + evaluation service + repository interface
+internal/level/              Project-scoped immutable XP Level thresholds and XP-to-Level resolution
 internal/progression/          Materialized Player State + transactional Event -> Reward -> State orchestration
 internal/platform/database/  GORM/PostgreSQL records, queries, transactions, and migrations
 ```
@@ -505,6 +506,8 @@ Player State
 ```
 
 `Player State` is a current materialized representation for efficient reads. The initial concrete state stores Project-scoped Player XP in `player_states` and is updated atomically with Reward Grants inside the same PostgreSQL transaction. Player State is derived/materialized data; Reward Grants remain the auditable historical source for why XP changed.
+
+Levels are a derived progression view over Player XP. Level 1 is implicit at 0 XP. Projects may append immutable, contiguous Level thresholds with strictly increasing XP requirements; current Level is resolved from the Project-scoped threshold ladder and must not become a second mutable source of truth. Named tiers, mutable ladders, per-level rewards, prestige, formulas, and a general progression DSL remain out of scope until concrete use cases justify them. See `docs/concepts/levels.md`.
 
 Reward history provides auditability.
 
