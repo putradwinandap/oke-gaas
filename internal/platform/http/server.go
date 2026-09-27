@@ -115,8 +115,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 			return nil
 		}
 		var request struct {
-			EventType  string         `json:"event_type"`
-			XP         int64          `json:"xp"`
+			EventType     string         `json:"event_type"`
+			XP            int64          `json:"xp"`
 			Conditions    map[string]any `json:"conditions"`
 			MatchEvery    *uint64        `json:"match_every"`
 			OncePerUTCDay bool           `json:"once_per_utc_day"`
