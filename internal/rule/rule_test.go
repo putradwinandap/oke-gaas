@@ -81,7 +81,7 @@ func TestRuleMatchesEveryConfiguredTopLevelPropertyCondition(t *testing.T) {
 			"course_id":  "course_7",
 			"difficulty": 1,
 			"metadata":   map[string]any{"required": true},
-			"tags": []any{"backend", "go"},
+			"tags":       []any{"backend", "go"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
