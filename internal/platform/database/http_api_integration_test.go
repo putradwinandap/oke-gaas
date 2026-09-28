@@ -49,6 +49,8 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_badge_aware_event_processing() CASCADE").Error)
 	for _, table := range []string{
 		"project_api_keys",
+		"achievement_unlocks",
+		"achievement_definitions",
 		"event_processing",
 		"badge_definitions",
 		"player_counters",
