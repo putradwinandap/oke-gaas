@@ -138,6 +138,7 @@ internal/reward/             Auditable XP Reward Grant domain + evaluation servi
 internal/level/              Project-scoped immutable XP Level thresholds and XP-to-Level resolution
 internal/progression/          Materialized Player State + transactional Event -> Reward -> State orchestration
 internal/platform/database/  GORM/PostgreSQL records, queries, transactions, and migrations
+internal/platform/telemetry/ OpenTelemetry provider setup, OTLP export, and shutdown lifecycle
 ```
 
 Repository interfaces belong at the domain/application consumer boundary. GORM record types and query construction belong in infrastructure.
@@ -885,6 +886,8 @@ Do not leave stale completed branches or completed issues open without a reason.
 ## 20.2 Self-hosting operations baseline
 
 The initial self-hosting deployment is Docker Compose with one PostgreSQL service, one one-shot migration job, and one API service.
+
+The API instruments HTTP requests and synchronous Event processing with OpenTelemetry traces and metrics. OTLP export is disabled unless an OTLP endpoint is configured. Telemetry must not include Project, Player, Event, or API-key identifiers, Event properties, or raw internal error messages.
 
 Operational rules:
 

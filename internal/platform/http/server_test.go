@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
@@ -8,6 +9,10 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -23,6 +28,27 @@ func TestHealthEndpoint(t *testing.T) {
 	var body map[string]string
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	require.Equal(t, "ok", body["status"])
+}
+
+func TestTelemetryMiddlewareContinuesIncomingTrace(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+
+	app := New()
+	req := httptest.NewRequest("GET", "/health", nil)
+	req.Header.Set("traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	spans := recorder.Ended()
+	require.Len(t, spans, 1)
+	require.Equal(t, "0af7651916cd43dd8448eb211c80319c", spans[0].SpanContext().TraceID().String())
+	require.Equal(t, "b7ad6b7169203331", spans[0].Parent().SpanID().String())
 }
 
 func TestCentralErrorHandlerReturnsSanitizedJSONEnvelope(t *testing.T) {

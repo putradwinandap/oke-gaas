@@ -25,6 +25,8 @@ POSTGRES_USER=oke_gaas
 POSTGRES_PASSWORD=
 OKE_GAAS_ADMIN_API_KEY=
 OKE_GAAS_HTTP_PORT=8080
+# Optional; leave empty to disable telemetry export.
+OTEL_EXPORTER_OTLP_ENDPOINT=
 ```
 
 Both secret values are intentionally blank in `.env.example`. Docker Compose uses required-variable expansion and refuses to render/start the stack while either value is empty, preventing the checked-in example from becoming a usable credential. Generate secrets with an appropriate cryptographically secure password/secret generator. Because the baseline constructs PostgreSQL connection URIs from `POSTGRES_PASSWORD`, keep that value to URL-unreserved characters (`A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`) and use at least 32 random characters. `OKE_GAAS_ADMIN_API_KEY` must also contain at least 32 non-whitespace characters. Project API keys are provisioned by the API and are returned only at Project creation.
@@ -59,6 +61,14 @@ GET http://localhost:8080/health
 ```
 
 Override the host port with `OKE_GAAS_HTTP_PORT`.
+
+## Observability
+
+The API creates OpenTelemetry server spans and request metrics for every HTTP route. Event ingestion adds a child span and records processing duration, outcome, duplicate status, and reward grant count. Telemetry does not include Project, Player, Event, or API-key identifiers, event properties, or raw error messages.
+
+Export is disabled unless an OTLP endpoint is configured. Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP collector base URL (for example `http://otel-collector:4318`); the trace and metric exporters append their standard signal paths. Signal-specific `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` may be used instead. The Compose API service passes these settings through. The collector must be reachable from the API container, and production deployments should configure an authenticated, encrypted endpoint where the network requires it.
+
+The API exports `http.server.requests`, `http.server.request.duration`, `oke_gaas.event.processing.count`, `oke_gaas.event.processing.duration`, and `oke_gaas.event.processing.reward_grants`. HTTP metrics use method, route, and status attributes; processing metrics use outcome and duplicate attributes, while grant count is a measurement. Keep route templates low-cardinality and do not add caller-controlled identifiers or Event properties to telemetry attributes.
 
 ## Migration operations
 
