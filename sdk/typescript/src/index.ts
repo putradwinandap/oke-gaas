@@ -629,7 +629,6 @@ export function createGaas(config: GaasConfig): GaasClient {
       },
     },
   };
-  };
 }
 
 function requireNonEmpty(value: string, name: string): string {
