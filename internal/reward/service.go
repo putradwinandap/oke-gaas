@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/putradwinandap/oke-gaas/internal/badge"
 	"github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
 )
@@ -24,12 +25,19 @@ type DailyClaimer interface {
 
 // Service evaluates matching rules and records auditable grants.
 type Service struct {
-	rules       rule.Repository
-	grants      Repository
-	counter     MatchCounter
-	dailyClaims DailyClaimer
-	now         func() time.Time
-	newID       func() (string, error)
+	rules            rule.Repository
+	grants           Repository
+	counter          MatchCounter
+	dailyClaims      DailyClaimer
+	now              func() time.Time
+	newID            func() (string, error)
+	badgeDefinitions badge.Repository
+}
+
+// WithBadgeDefinitions enables Badge rules in the same single Rule evaluation pass.
+func (s *Service) WithBadgeDefinitions(definitions badge.Repository) *Service {
+	s.badgeDefinitions = definitions
+	return s
 }
 
 func NewService(rules rule.Repository, grants Repository, counters ...MatchCounter) *Service {
@@ -64,6 +72,12 @@ func (s *Service) Process(ctx context.Context, value *event.Event) ([]*Grant, er
 			continue
 		}
 		if candidate.RewardType() == rule.TypeBadge {
+			if s.badgeDefinitions == nil {
+				return nil, fmt.Errorf("process badge rule %s: badge definitions are required", candidate.ID())
+			}
+			if _, err := s.badgeDefinitions.Get(ctx, value.ProjectID(), candidate.BadgeID()); err != nil {
+				return nil, fmt.Errorf("verify badge rule %s definition: %w", candidate.ID(), err)
+			}
 			id, err := s.newID()
 			if err != nil {
 				return nil, fmt.Errorf("create badge grant id: %w", err)

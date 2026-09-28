@@ -155,23 +155,3 @@ type StateRepository interface {
 	Increment(ctx context.Context, projectID, playerID, counterID string, updatedAt time.Time) (*State, error)
 	ListByPlayer(ctx context.Context, projectID, playerID string) ([]*State, error)
 }
-
-// ProcessEvent increments every matching Counter within the caller's transaction.
-func ProcessEvent(ctx context.Context, definitions Repository, states StateRepository, value *event.Event) error {
-	if value == nil {
-		return errors.New("counter event is required")
-	}
-	matching, err := definitions.ListByEventType(ctx, value.ProjectID(), value.Type())
-	if err != nil {
-		return err
-	}
-	for _, definition := range matching {
-		if definition == nil || !definition.Matches(value) {
-			continue
-		}
-		if _, err := states.Increment(ctx, value.ProjectID(), value.PlayerID(), definition.ID(), value.ReceivedAt()); err != nil {
-			return err
-		}
-	}
-	return nil
-}

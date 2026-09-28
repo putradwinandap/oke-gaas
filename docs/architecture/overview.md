@@ -75,7 +75,7 @@ Update Player State
 Commit
 ```
 
-The initial transaction should keep accepted Event processing, reward history, unique Badge ownership, Player Counter progress, and Player State consistent.
+The initial transaction should keep accepted Event processing, reward history, unique Badge ownership, Player Counter progress, Achievement unlocks, and Player State consistent.
 
 ## Domain Events
 

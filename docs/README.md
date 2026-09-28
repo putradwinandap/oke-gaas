@@ -36,5 +36,6 @@ The umbrella product-direction issue is [#1 — define Oke Gaas product directio
 - [Projects and Players](./concepts/projects-and-players.md)
 - [Rules and Rewards](./concepts/rules-and-rewards.md)
 - [Badges](./concepts/badges.md)
+- [Achievements](./concepts/achievements.md)
 
 When an architectural or engineering rule changes, update `AGENTS.md` in the same logical change and update the relevant document here when deeper explanation is useful.

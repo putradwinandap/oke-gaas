@@ -486,3 +486,120 @@ test("Player Counter progress rejects unsafe integer responses", async () => {
     );
   });
 });
+
+test("Achievement definitions and Player unlock state use the server API", async () => {
+  let call = 0;
+  await withServer(async (request, response) => {
+    call += 1;
+    if (call === 1) {
+      assert.equal(request.method, "POST");
+      assert.equal(request.url, "/v1/projects/proj_test/achievements");
+      assert.deepEqual(await readJson(request), {
+        name: "First ten lessons",
+        counter_id: "counter_123",
+        target: 10,
+      });
+      response.writeHead(201);
+      response.end(JSON.stringify({
+        id: "achievement_123",
+        project_id: "proj_test",
+        name: "First ten lessons",
+        counter_id: "counter_123",
+        target: 10,
+        created_at: "2026-09-28T10:00:00Z",
+      }));
+      return;
+    }
+    if (call === 2) {
+      assert.equal(request.method, "GET");
+      assert.equal(request.url, "/v1/projects/proj_test/achievements");
+      response.writeHead(200);
+      response.end(JSON.stringify({
+        project_id: "proj_test",
+        achievements: [{
+          id: "achievement_123",
+          project_id: "proj_test",
+          name: "First ten lessons",
+          counter_id: "counter_123",
+          target: 10,
+          created_at: "2026-09-28T10:00:00Z",
+        }],
+      }));
+      return;
+    }
+    assert.equal(request.method, "GET");
+    assert.equal(request.url, "/v1/projects/proj_test/players/player_123/achievements");
+    response.writeHead(200);
+    response.end(JSON.stringify({
+      project_id: "proj_test",
+      player_id: "player_123",
+      achievements: [{
+        id: "achievement_123",
+        project_id: "proj_test",
+        name: "First ten lessons",
+        counter_id: "counter_123",
+        target: 10,
+        created_at: "2026-09-28T10:00:00Z",
+        unlocked: true,
+        event_id: "evt_123",
+        counter_value: 10,
+        unlocked_at: "2026-09-28T10:00:00Z",
+      }],
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
+    const created = await gaas.achievements.create({
+      name: "First ten lessons",
+      counterId: "counter_123",
+      target: 10,
+    });
+    assert.deepEqual(created, {
+      id: "achievement_123",
+      projectId: "proj_test",
+      name: "First ten lessons",
+      counterId: "counter_123",
+      target: 10,
+      createdAt: "2026-09-28T10:00:00Z",
+    });
+    assert.deepEqual(await gaas.achievements.list(), [created]);
+    assert.deepEqual(await gaas.players.getAchievements("player_123"), [{
+      ...created,
+      unlocked: true,
+      eventId: "evt_123",
+      counterValue: 10,
+      unlockedAt: "2026-09-28T10:00:00Z",
+    }]);
+  });
+});
+
+test("Achievement SDK rejects unsafe target and malformed unlock response values", async () => {
+  await withServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      project_id: "proj_test",
+      player_id: "player_123",
+      achievements: [{
+        id: "achievement_123",
+        project_id: "proj_test",
+        name: "First ten lessons",
+        counter_id: "counter_123",
+        target: 10,
+        created_at: "2026-09-28T10:00:00Z",
+        unlocked: true,
+        event_id: "evt_123",
+        counter_value: Number.MAX_SAFE_INTEGER + 1,
+        unlocked_at: "2026-09-28T10:00:00Z",
+      }],
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
+    await assert.rejects(
+      () => gaas.achievements.create({ name: "First", counterId: "counter_1", target: Number.MAX_SAFE_INTEGER + 1 }),
+      TypeError,
+    );
+    await assert.rejects(
+      () => gaas.players.getAchievements("player_123"),
+      (error) => error instanceof GaasError && error.code === "invalid_response",
+    );
+  });
+});

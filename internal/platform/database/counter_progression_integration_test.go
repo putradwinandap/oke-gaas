@@ -182,6 +182,9 @@ func TestCounterMigrationDownFailsClosedWhenDefinitionsExist(t *testing.T) {
 
 func TestCounterMigrationDownSucceedsWithoutDefinitions(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
+	achievementDown, err := os.ReadFile("../../../migrations/000012_achievements.down.sql")
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(string(achievementDown)).Error)
 	downSQL, err := os.ReadFile("../../../migrations/000011_counters.down.sql")
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(string(downSQL)).Error)

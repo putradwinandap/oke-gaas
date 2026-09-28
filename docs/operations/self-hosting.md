@@ -177,3 +177,7 @@ Those capabilities should be added only through explicit operational decisions a
 ## Self-hosting verification
 
 The gated CI job runs `scripts/verify-self-hosting.sh`. The script validates Compose rendering, builds the API image, starts the complete stack, waits for `/health`, verifies the API process is non-root, and creates a Project through the authenticated REST API. This exercises the database health -> migrations -> API dependency chain on the reviewed revision.
+
+Migration `000012_achievements` adds immutable Counter-linked Achievement definitions and auditable Player unlocks. Once a Project has any Achievement definition, the Event-processing trigger requires an Achievement-aware binary. The `000012` down migration fails closed while Achievement definitions exist. Use a forward-fix or restore a verified backup from before Achievements were configured. Downgrade in reverse migration order, with `000012` before `000011`.
+
+Migration `000013_badge_rewards` adds Badge reward Rules and audit records after the Achievement schema. A Project with Badge Rules requires a Badge-aware binary. The `000013` down migration fails closed while Badge definitions, rules, or grants exist. Downgrade in reverse order: `000013` before `000012`.

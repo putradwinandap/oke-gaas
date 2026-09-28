@@ -3,7 +3,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM reward_grants WHERE reward_type = 'badge')
        OR EXISTS (SELECT 1 FROM rules WHERE reward_type = 'badge')
        OR EXISTS (SELECT 1 FROM badge_definitions) THEN
-        RAISE EXCEPTION 'cannot roll back 000012 while Badge definitions, Rules, or grants exist';
+        RAISE EXCEPTION 'cannot roll back 000013 while Badge definitions, Rules, or grants exist';
     END IF;
 END
 $$;

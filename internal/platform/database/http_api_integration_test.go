@@ -15,6 +15,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/achievement"
 	"github.com/putradwinandap/oke-gaas/internal/badge"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
 	eventdomain "github.com/putradwinandap/oke-gaas/internal/event"
@@ -76,7 +77,8 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000009_rule_daily_claims.up.sql",
 		"../../../migrations/000010_level_thresholds.up.sql",
 		"../../../migrations/000011_counters.up.sql",
-		"../../../migrations/000012_badge_rewards.up.sql",
+		"../../../migrations/000012_achievements.up.sql",
+		"../../../migrations/000013_badge_rewards.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -94,17 +96,19 @@ func newHTTPIntegrationApp(db *gorm.DB) *fiber.App {
 	playerCounters := database.NewPlayerCounterRepository(db)
 	badges := database.NewBadgeRepository(db)
 	badgeGrants := database.NewBadgeGrantRepository(db)
+	achievements := achievement.NewService(projects, players, counters, database.NewAchievementRepository(db), database.NewAchievementUnlockRepository(db))
 	return httpserver.New(httpserver.Dependencies{
-		Projects: project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
-		Players:  player.NewService(projects, players),
-		Levels:   level.NewService(projects, database.NewLevelRepository(db)),
-		Counters: counter.NewService(projects, players, counters, playerCounters),
-		Badges:   badge.NewService(projects, players, badges, badgeGrants),
-		Rules:    rule.NewServiceWithBadges(projects, rules, badges),
-		Progress: progression.NewService(database.NewProgressionTransactor(db)),
-		States:   database.NewPlayerStateRepository(db),
-		Access:   access.NewService(database.NewProjectAPIKeyRepository(db)),
-		AdminKey: "test-admin-key",
+		Projects:     project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
+		Players:      player.NewService(projects, players),
+		Levels:       level.NewService(projects, database.NewLevelRepository(db)),
+		Counters:     counter.NewService(projects, players, counters, playerCounters),
+		Badges:       badge.NewService(projects, players, badges, badgeGrants),
+		Achievements: achievements,
+		Rules:        rule.NewServiceWithBadges(projects, rules, badges),
+		Progress:     progression.NewService(database.NewProgressionTransactor(db)),
+		States:       database.NewPlayerStateRepository(db),
+		Access:       access.NewService(database.NewProjectAPIKeyRepository(db)),
+		AdminKey:     "test-admin-key",
 	})
 }
 

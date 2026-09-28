@@ -84,6 +84,22 @@ func TestProcessEventIncrementsOnlyMatchingCounters(t *testing.T) {
 	require.NotContains(t, states.values, otherType.ID())
 }
 
+func TestProcessEventWithValuesReturnsOnlyCountersAdvancedByEvent(t *testing.T) {
+	now := time.Now()
+	matching, err := New("counter_lessons", "proj_a", "lessons_completed", "lesson_completed", map[string]any{"course_id": "course_7"}, now)
+	require.NoError(t, err)
+	nonMatching, err := New("counter_wrong_course", "proj_a", "wrong_course", "lesson_completed", map[string]any{"course_id": "course_8"}, now)
+	require.NoError(t, err)
+	definitions := &memoryDefinitions{values: []*Definition{matching, nonMatching}}
+	states := &memoryStates{values: make(map[string]*State)}
+	value := counterEvent(t, "proj_a", "lesson_completed", map[string]any{"course_id": "course_7"})
+
+	counts, err := ProcessEventWithValues(context.Background(), definitions, states, value)
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{matching.ID(): 1}, counts)
+	require.NotContains(t, counts, nonMatching.ID())
+}
+
 func counterEvent(t *testing.T, projectID, eventType string, properties map[string]any) *event.Event {
 	t.Helper()
 	value, err := event.New("evt_counter", projectID, "player_a", eventType, time.Now(), time.Now(), properties)

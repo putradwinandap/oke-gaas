@@ -43,7 +43,7 @@ func openRulesRewardsIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000007_rule_conditions.up.sql",
 		"../../../migrations/000008_rule_match_counts.up.sql",
 		"../../../migrations/000009_rule_daily_claims.up.sql",
-		"../../../migrations/000012_badge_rewards.up.sql",
+		"../../../migrations/000013_badge_rewards.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)

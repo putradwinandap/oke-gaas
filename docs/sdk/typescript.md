@@ -60,3 +60,5 @@ npm run check
 ```
 
 `npm run check` performs strict TypeScript type-checking, builds declarations/JavaScript, and runs Node's test runner against the compiled SDK.
+
+The Project-scoped client supports immutable Achievement creation/listing and Player Achievement unlock reads. Achievement targets are positive safe integers; unlock metadata comes from the server.

@@ -23,6 +23,8 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&counterDefinitionRecord{},
 		&playerCounterStateRecord{},
 		&badgeDefinitionRecord{},
+		&achievementDefinitionRecord{},
+		&achievementUnlockRecord{},
 		&playerStateRecord{},
 		&eventProcessingRecord{},
 	); err != nil {
@@ -57,6 +59,9 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_reward_grants_player_badge ON reward_grants(project_id, player_id, badge_id) WHERE reward_type = 'badge'`).Error; err != nil {
 		return fmt.Errorf("create development unique badge ownership index: %w", err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_achievements_project_name ON achievement_definitions(project_id, name)`).Error; err != nil {
+		return fmt.Errorf("create development achievement name index: %w", err)
 	}
 
 	constraints := []struct {
