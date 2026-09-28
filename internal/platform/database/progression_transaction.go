@@ -27,15 +27,20 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 	}
 
 	if err := t.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT set_config('oke_gaas.counter_aware', 'true', true)").Error; err != nil {
+			return fmt.Errorf("declare counter-aware event processing: %w", err)
+		}
 		return fn(progression.Work{
-			Players:     NewPlayerRepository(tx),
-			Events:      NewEventRepository(tx),
-			Rules:       NewRuleRepository(tx),
-			Grants:      NewRewardGrantRepository(tx),
-			Counters:    NewRuleMatchCounter(tx),
-			DailyClaims: NewRuleDailyClaimRepository(tx),
-			States:      NewPlayerStateRepository(tx),
-			Claims:      NewEventProcessingRepository(tx),
+			Players:            NewPlayerRepository(tx),
+			Events:             NewEventRepository(tx),
+			Rules:              NewRuleRepository(tx),
+			Grants:             NewRewardGrantRepository(tx),
+			Counters:           NewRuleMatchCounter(tx),
+			DailyClaims:        NewRuleDailyClaimRepository(tx),
+			CounterDefinitions: NewCounterRepository(tx),
+			CounterStates:      NewPlayerCounterRepository(tx),
+			States:             NewPlayerStateRepository(tx),
+			Claims:             NewEventProcessingRepository(tx),
 		})
 	}); err != nil {
 		return fmt.Errorf("progression transaction: %w", err)

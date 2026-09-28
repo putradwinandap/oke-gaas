@@ -20,6 +20,8 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&ruleDailyClaimRecord{},
 		&rewardGrantRecord{},
 		&levelThresholdRecord{},
+		&counterDefinitionRecord{},
+		&playerCounterStateRecord{},
 		&playerStateRecord{},
 		&eventProcessingRecord{},
 	); err != nil {
@@ -42,6 +44,12 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		ON level_thresholds(project_id, min_xp)
 	`).Error; err != nil {
 		return fmt.Errorf("create development level threshold xp index: %w", err)
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_counters_project_name
+		ON counter_definitions(project_id, name)
+	`).Error; err != nil {
+		return fmt.Errorf("create development counter name index: %w", err)
 	}
 
 	constraints := []struct {
@@ -117,6 +125,42 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 				ADD CONSTRAINT fk_level_thresholds_project
 				FOREIGN KEY (project_id)
 				REFERENCES projects(id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "counter_definitions",
+			name:  "fk_counter_definitions_project",
+			statement: `
+				ALTER TABLE counter_definitions
+				ADD CONSTRAINT fk_counter_definitions_project
+				FOREIGN KEY (project_id)
+				REFERENCES projects(id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "player_counters",
+			name:  "fk_player_counters_player_project",
+			statement: `
+				ALTER TABLE player_counters
+				ADD CONSTRAINT fk_player_counters_player_project
+				FOREIGN KEY (project_id, player_id)
+				REFERENCES players(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "player_counters",
+			name:  "fk_player_counters_definition",
+			statement: `
+				ALTER TABLE player_counters
+				ADD CONSTRAINT fk_player_counters_definition
+				FOREIGN KEY (project_id, counter_id)
+				REFERENCES counter_definitions(project_id, id)
 				ON UPDATE RESTRICT
 				ON DELETE RESTRICT
 			`,

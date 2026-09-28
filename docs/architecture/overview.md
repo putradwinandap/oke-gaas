@@ -29,7 +29,7 @@ Client Application
 +--------------------------+
 |       Domain Modules     |
 | Project / Player / Event |
-| Rule / Reward / ...      |
+| Rule / Reward / Counter  |
 +------------+-------------+
              |
              v
@@ -66,13 +66,16 @@ Match exact Event type + optional top-level property conditions
 Create Reward Grant
       |
       v
+Update matching Player Counters
+      |
+      v
 Update Player State
       |
       v
 Commit
 ```
 
-The initial transaction should keep accepted event processing, reward history, and player state consistent.
+The initial transaction should keep accepted Event processing, reward history, Player Counter progress, and Player State consistent.
 
 ## Domain Events
 
@@ -103,6 +106,7 @@ Important persistence properties:
 - version-aware rules with optional exact top-level Event property conditions
 - auditable reward grants
 - materialized player state
+- Project-defined Player Counters, updated atomically with accepted Event processing
 
 ## Evolution
 

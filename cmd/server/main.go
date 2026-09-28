@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/counter"
 	"github.com/putradwinandap/oke-gaas/internal/level"
 	"github.com/putradwinandap/oke-gaas/internal/platform/config"
 	"github.com/putradwinandap/oke-gaas/internal/platform/database"
@@ -68,11 +69,14 @@ func run() int {
 	rules := database.NewRuleRepository(db)
 	levels := database.NewLevelRepository(db)
 	states := database.NewPlayerStateRepository(db)
+	counters := database.NewCounterRepository(db)
+	playerCounters := database.NewPlayerCounterRepository(db)
 
 	app := httpserver.New(httpserver.Dependencies{
 		Projects: project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
 		Players:  player.NewService(projects, players),
 		Levels:   level.NewService(projects, levels),
+		Counters: counter.NewService(projects, players, counters, playerCounters),
 		Rules:    rule.NewService(projects, rules),
 		Progress: progression.NewService(database.NewProgressionTransactor(db)),
 		States:   states,

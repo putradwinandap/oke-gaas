@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/putradwinandap/oke-gaas/internal/counter"
 	"github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/player"
 	"github.com/putradwinandap/oke-gaas/internal/reward"
@@ -20,14 +21,16 @@ type ProcessingClaims interface {
 
 // Work contains repositories bound to one transaction.
 type Work struct {
-	Players     player.Repository
-	Events      event.Repository
-	Rules       rule.Repository
-	Grants      reward.Repository
-	Counters    reward.MatchCounter
-	DailyClaims reward.DailyClaimer
-	States      Repository
-	Claims      ProcessingClaims
+	Players            player.Repository
+	Events             event.Repository
+	Rules              rule.Repository
+	Grants             reward.Repository
+	Counters           reward.MatchCounter
+	DailyClaims        reward.DailyClaimer
+	CounterDefinitions counter.Repository
+	CounterStates      counter.StateRepository
+	States             Repository
+	Claims             ProcessingClaims
 }
 
 // Transactor executes one callback atomically.
@@ -103,6 +106,9 @@ func (s *Service) Process(ctx context.Context, command event.IngestCommand) (*Pr
 		result.Grants, err = rewards.Process(ctx, ingested.Event)
 		if err != nil {
 			return fmt.Errorf("process rewards: %w", err)
+		}
+		if err := counter.ProcessEvent(ctx, work.CounterDefinitions, work.CounterStates, ingested.Event); err != nil {
+			return fmt.Errorf("process player counters: %w", err)
 		}
 
 		var xp int64
