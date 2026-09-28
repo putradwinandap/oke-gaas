@@ -541,7 +541,7 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 	)
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(
-		"INSERT INTO reward_grants (id, project_id, player_id, event_id, rule_id, rule_version, amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO reward_grants (id, project_id, player_id, event_id, rule_id, rule_version, reward_type, amount, created_at) VALUES (?, ?, ?, ?, ?, ?, 'xp', ?, ?)",
 		grant.ID(), grant.ProjectID(), grant.PlayerID(), grant.EventID(), grant.RuleID(), grant.RuleVersion(), grant.Amount(), grant.CreatedAt(),
 	).Error)
 
