@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	badgedomain "github.com/putradwinandap/oke-gaas/internal/badge"
 	eventdomain "github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/player"
 	"github.com/putradwinandap/oke-gaas/internal/progression"
@@ -33,7 +34,8 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
-	for _, table := range []string{"project_api_keys", "achievement_unlocks", "achievement_definitions", "event_processing", "player_counters", "counter_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "level_thresholds", "reward_grants", "rules", "events", "players", "projects"} {
+	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_badge_aware_event_processing() CASCADE").Error)
+	for _, table := range []string{"project_api_keys", "achievement_unlocks", "achievement_definitions", "event_processing", "badge_definitions", "player_counters", "counter_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "level_thresholds", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -47,6 +49,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000009_rule_daily_claims.up.sql",
 		"../../../migrations/000011_counters.up.sql",
 		"../../../migrations/000012_achievements.up.sql",
+		"../../../migrations/000013_badge_rewards.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -270,6 +273,43 @@ func TestProgressionTransactionRollsBackGrantStateAndProcessingClaim(t *testing.
 	require.Equal(t, int64(1), retry.State.XP())
 }
 
+func TestBadgeGrantRollsBackWithEventWhenPlayerStateUpdateFails(t *testing.T) {
+	db := openProgressionIntegrationDatabase(t)
+	ctx := context.Background()
+	proj, err := project.New("Badge Rollback", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewProjectRepository(db).Save(ctx, proj))
+	pl, err := player.New(proj.ID(), "badge-rollback-player", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewPlayerRepository(db).Save(ctx, pl))
+
+	badge, err := badgedomain.New("badge_rollback", proj.ID(), "Rollback Badge", "", time.Now())
+	require.NoError(t, err)
+	require.NoError(t, NewBadgeRepository(db).Save(ctx, badge))
+	badgeRule, err := ruledomain.NewBadge("rule_a_badge_rollback", proj.ID(), 1, "lesson_completed", badge.ID(), nil)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, badgeRule))
+	xpRule, err := ruledomain.New("rule_z_xp_overflow", proj.ID(), 1, "lesson_completed", 1)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, xpRule))
+
+	_, err = NewPlayerStateRepository(db).AddXP(ctx, proj.ID(), pl.ID(), int64(^uint64(0)>>1), time.Now())
+	require.NoError(t, err)
+	service := progression.NewService(NewProgressionTransactor(db))
+	command := eventdomain.IngestCommand{ID: "evt_badge_rollback", ProjectID: proj.ID(), PlayerID: pl.ID(), Type: "lesson_completed", OccurredAt: time.Now()}
+	_, err = service.Process(ctx, command)
+	require.Error(t, err)
+
+	_, err = NewEventRepository(db).GetByID(ctx, proj.ID(), command.ID)
+	require.ErrorIs(t, err, eventdomain.ErrNotFound)
+	grants, err := NewRewardGrantRepository(db).ListByEvent(ctx, proj.ID(), command.ID)
+	require.NoError(t, err)
+	require.Empty(t, grants)
+	var processingCount int64
+	require.NoError(t, db.Table("event_processing").Where("project_id = ? AND event_id = ?", proj.ID(), command.ID).Count(&processingCount).Error)
+	require.Zero(t, processingCount)
+}
+
 func TestEventProcessingClaimPreventsReprocessingExistingEvent(t *testing.T) {
 	db := openProgressionIntegrationDatabase(t)
 	ctx := context.Background()
@@ -444,7 +484,8 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
-	for _, table := range []string{"project_api_keys", "achievement_unlocks", "achievement_definitions", "event_processing", "player_counters", "counter_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "level_thresholds", "reward_grants", "rules", "events", "players", "projects"} {
+	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_badge_aware_event_processing() CASCADE").Error)
+	for _, table := range []string{"project_api_keys", "achievement_unlocks", "achievement_definitions", "event_processing", "badge_definitions", "player_counters", "counter_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "level_thresholds", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -500,7 +541,10 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 		time.Now().Add(-30*time.Minute),
 	)
 	require.NoError(t, err)
-	require.NoError(t, NewRewardGrantRepository(db).Save(ctx, grant))
+	require.NoError(t, db.Exec(
+		"INSERT INTO reward_grants (id, project_id, player_id, event_id, rule_id, rule_version, reward_type, amount, created_at) VALUES (?, ?, ?, ?, ?, ?, 'xp', ?, ?)",
+		grant.ID(), grant.ProjectID(), grant.PlayerID(), grant.EventID(), grant.RuleID(), grant.RuleVersion(), grant.Amount(), grant.CreatedAt(),
+	).Error)
 
 	require.NoError(t, AutoMigrateCoreForDevelopment(db))
 

@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/putradwinandap/oke-gaas/internal/badge"
 	"github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
 )
@@ -23,12 +25,19 @@ type DailyClaimer interface {
 
 // Service evaluates matching rules and records auditable grants.
 type Service struct {
-	rules       rule.Repository
-	grants      Repository
-	counter     MatchCounter
-	dailyClaims DailyClaimer
-	now         func() time.Time
-	newID       func() (string, error)
+	rules            rule.Repository
+	grants           Repository
+	counter          MatchCounter
+	dailyClaims      DailyClaimer
+	now              func() time.Time
+	newID            func() (string, error)
+	badgeDefinitions badge.Repository
+}
+
+// WithBadgeDefinitions enables Badge rules in the same single Rule evaluation pass.
+func (s *Service) WithBadgeDefinitions(definitions badge.Repository) *Service {
+	s.badgeDefinitions = definitions
+	return s
 }
 
 func NewService(rules rule.Repository, grants Repository, counters ...MatchCounter) *Service {
@@ -60,6 +69,30 @@ func (s *Service) Process(ctx context.Context, value *event.Event) ([]*Grant, er
 	grants := make([]*Grant, 0, len(rules))
 	for _, candidate := range rules {
 		if candidate == nil || !candidate.Matches(value) {
+			continue
+		}
+		if candidate.RewardType() == rule.TypeBadge {
+			if s.badgeDefinitions == nil {
+				return nil, fmt.Errorf("process badge rule %s: badge definitions are required", candidate.ID())
+			}
+			if _, err := s.badgeDefinitions.Get(ctx, value.ProjectID(), candidate.BadgeID()); err != nil {
+				return nil, fmt.Errorf("verify badge rule %s definition: %w", candidate.ID(), err)
+			}
+			id, err := s.newID()
+			if err != nil {
+				return nil, fmt.Errorf("create badge grant id: %w", err)
+			}
+			grant, err := NewBadgeGrant(id, value.ProjectID(), value.PlayerID(), value.ID(), candidate.ID(), candidate.Version(), candidate.BadgeID(), s.now())
+			if err != nil {
+				return nil, fmt.Errorf("build badge grant: %w", err)
+			}
+			if err := s.grants.Save(ctx, grant); err != nil {
+				if errors.Is(err, ErrAlreadyExists) {
+					continue
+				}
+				return nil, fmt.Errorf("save badge reward grant: %w", err)
+			}
+			grants = append(grants, grant)
 			continue
 		}
 		if candidate.OncePerUTCDay() {

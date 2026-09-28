@@ -129,6 +129,46 @@ paths:
         "200": { description: Current Player Counter values }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/badges:
+    post:
+      summary: Create an immutable Project Badge definition
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 255 }
+                description: { type: string, maxLength: 1024 }
+      responses:
+        "201": { description: Badge definition created }
+        "401": { $ref: "#/components/responses/Error" }
+    get:
+      summary: List Project Badge definitions
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200": { description: Project Badge definitions }
+  /v1/projects/{projectId}/players/{playerId}/badges:
+    get:
+      summary: Retrieve a Player's collectible Badge grants
+      description: Each owned Badge appears at most once with the Event and Rule version that first granted it.
+      security: [{ ProjectBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: playerId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Auditable Player Badge collection }
+        "404": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/achievements:
     post:
       summary: Create an immutable Counter-based Achievement
@@ -165,7 +205,7 @@ paths:
   /v1/projects/{projectId}/players/{playerId}/achievements:
     get:
       summary: Retrieve a Player's Achievement unlock state
-      description: Returns every Project Achievement with its unlocked flag and, when earned, triggering Event and Counter value.
+      description: Returns every Project Achievement with unlocked status and, when earned, triggering Event and Counter value.
       security: [{ ProjectBearer: [] }]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -179,7 +219,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/rules:
     post:
-      summary: Create a version-1 exact-event XP rule with optional property, count, or UTC-day gating
+      summary: Create a version-1 exact-event XP or Badge rule
       security: [{ ProjectBearer: [] }]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -189,10 +229,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [event_type, xp]
+              required: [event_type]
               properties:
                 event_type: { type: string, maxLength: 255 }
-                xp: { type: integer, format: int64, minimum: 1 }
+                reward_type: { type: string, enum: [xp, badge], default: xp }
+                xp: { type: integer, format: int64, minimum: 1, description: Required for XP Rules }
+                badge_id: { type: string, description: Required for Badge Rules and must belong to this Project }
                 conditions:
                   type: object
                   additionalProperties: true
@@ -207,6 +249,7 @@ paths:
                   type: boolean
                   default: false
                   description: Grant at most once per UTC calendar day for each Player and Rule version, using Event occurred_at. Requires match_every=1.
+              description: Badge Rules grant a single collectible Badge and do not support match_every or once_per_utc_day.
       responses:
         "201": { description: Rule created }
   /v1/projects/{projectId}/events:

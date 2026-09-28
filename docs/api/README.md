@@ -18,6 +18,7 @@ Oke Gaas-generated identifiers use a short semantic prefix plus a random opaque 
 - `player_...` for Players
 - `rule_...` for Rules
 - `grant_...` for Reward Grants
+- `badge_...` for Badge definitions
 
 External Event identity is different: `event_id` is supplied by the integrating application, must be stable across retries, and is unique only within one Project.
 
@@ -37,3 +38,5 @@ API failures use one JSON envelope:
 ```
 
 See `openapi.yaml` for the currently implemented endpoints.
+
+Projects can create and list immutable Badge definitions at `/v1/projects/{projectId}/badges`. A version-1 Rule can grant either XP or one Project-owned Badge by setting `reward_type: "badge"` and `badge_id`; Badge Rules use the existing exact-event and property-condition matching. Player collections are returned at `/v1/projects/{projectId}/players/{playerId}/badges` with first-grant Event and Rule-version audit fields.

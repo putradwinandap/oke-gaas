@@ -25,6 +25,20 @@ func TestRuleMatchesExactProjectAndEventType(t *testing.T) {
 	require.False(t, value.Matches(otherType))
 }
 
+func TestBadgeRuleUsesExistingExactEventConditionsAndHasNoXP(t *testing.T) {
+	value, err := NewBadge("rule_badge", "proj_1", 1, "lesson_completed", "badge_1", map[string]any{"course": "go"})
+	require.NoError(t, err)
+	matching, err := event.New("evt_1", "proj_1", "player_1", "lesson_completed", time.Now(), time.Now(), map[string]any{"course": "go"})
+	require.NoError(t, err)
+	nonmatching, err := event.New("evt_2", "proj_1", "player_1", "lesson_completed", time.Now(), time.Now(), map[string]any{"course": "other"})
+	require.NoError(t, err)
+	require.Equal(t, TypeBadge, value.RewardType())
+	require.Equal(t, "badge_1", value.BadgeID())
+	require.Zero(t, value.XPAmount())
+	require.True(t, value.Matches(matching))
+	require.False(t, value.Matches(nonmatching))
+}
+
 func TestRuleMatchesEveryConfiguredTopLevelPropertyCondition(t *testing.T) {
 	value, err := NewConditional(
 		"rule_lesson",

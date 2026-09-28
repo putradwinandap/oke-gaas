@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/putradwinandap/oke-gaas/internal/achievement"
+	"github.com/putradwinandap/oke-gaas/internal/badge"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
 	"github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/player"
@@ -33,6 +34,7 @@ type Work struct {
 	CounterStates      counter.StateRepository
 	Achievements       achievement.Repository
 	AchievementUnlocks achievement.UnlockRepository
+	BadgeDefinitions   badge.Repository
 	States             Repository
 	Claims             ProcessingClaims
 }
@@ -107,6 +109,9 @@ func (s *Service) Process(ctx context.Context, command event.IngestCommand) (*Pr
 		}
 
 		rewards := reward.NewServiceWithDailyClaims(work.Rules, work.Grants, work.Counters, work.DailyClaims)
+		if work.BadgeDefinitions != nil {
+			rewards.WithBadgeDefinitions(work.BadgeDefinitions)
+		}
 		result.Grants, err = rewards.Process(ctx, ingested.Event)
 		if err != nil {
 			return fmt.Errorf("process rewards: %w", err)

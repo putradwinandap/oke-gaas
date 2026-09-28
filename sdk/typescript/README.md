@@ -64,6 +64,27 @@ await gaas.track("purchase_completed", {
 
 The current SDK also exposes the thin MVP setup wrappers `players.create()`, `rules.create()`, and `counters.create()` so an integration can exercise the complete Project-scoped vertical slice. Project provisioning remains an operator/admin API concern and is intentionally not exposed through this Project-key client.
 
+### Collectible Badges
+
+Create and list Project Badge definitions, configure an exact-event Badge Rule, and retrieve a Player's owned Badge collection:
+
+```ts
+const badge = await gaas.badges.create({
+  name: "Early Adopter",
+  description: "Joined during the first cohort",
+});
+
+await gaas.rules.createBadge({
+  eventType: "lesson_completed",
+  badgeId: badge.id,
+  conditions: { course_id: "course_7" },
+});
+
+const collection = await gaas.players.getBadges("player_123");
+```
+
+Badge Rules grant one Badge, do not accept the XP aggregate or daily-gating options, and retain their grant Event and Rule-version audit details in the server response. A Player owns a given Project Badge at most once.
+
 ### Player-visible counters
 
 Create an immutable Counter for an exact Event type, optionally narrowed by exact top-level Event properties, then read its current value for a Player:

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/putradwinandap/oke-gaas/internal/badge"
 	"github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
 	"github.com/stretchr/testify/require"
@@ -80,6 +81,36 @@ func TestServiceGrantsXPForMatchingExactEventRule(t *testing.T) {
 	require.Equal(t, "rule_lesson", grants[0].RuleID())
 	require.Equal(t, "evt_1", grants[0].EventID())
 	require.Equal(t, TypeXP, grants[0].Type())
+}
+
+func TestServiceGrantsBadgeWithRuleAudit(t *testing.T) {
+	badgeRule, err := rule.NewBadge("rule_badge", "proj_1", 3, "lesson_completed", "badge_1", map[string]any{"course": "go"})
+	require.NoError(t, err)
+	repository := &fakeGrantRepository{}
+	definitions := fakeBadgeRepository{}
+	service := NewService(fakeRuleRepository{rules: []*rule.Rule{badgeRule}}, repository).WithBadgeDefinitions(definitions)
+	service.now = func() time.Time { return time.Date(2026, 9, 28, 9, 0, 0, 0, time.UTC) }
+	service.newID = func() (string, error) { return "grant_badge_1", nil }
+	value, err := event.New("evt_badge", "proj_1", "player_1", "lesson_completed", time.Now(), time.Now(), map[string]any{"course": "go"})
+	require.NoError(t, err)
+	grants, err := service.Process(context.Background(), value)
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	require.Equal(t, TypeBadge, grants[0].Type())
+	require.Equal(t, "badge_1", grants[0].BadgeID())
+	require.Zero(t, grants[0].Amount())
+	require.Equal(t, "evt_badge", grants[0].EventID())
+	require.Equal(t, uint64(3), grants[0].RuleVersion())
+}
+
+type fakeBadgeRepository struct{}
+
+func (fakeBadgeRepository) Save(context.Context, *badge.Definition) error { return nil }
+func (fakeBadgeRepository) ListByProject(context.Context, string) ([]*badge.Definition, error) {
+	return nil, nil
+}
+func (fakeBadgeRepository) Get(_ context.Context, projectID, id string) (*badge.Definition, error) {
+	return badge.New(id, projectID, "Test badge", "", time.Now())
 }
 
 func TestServiceGrantsOnlyOnAggregateThreshold(t *testing.T) {

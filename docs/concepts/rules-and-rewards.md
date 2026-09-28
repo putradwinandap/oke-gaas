@@ -51,6 +51,12 @@ Aggregate progress is materialized in `rule_match_counts` and updated in the sam
 
 This is not a general aggregate DSL. Arbitrary expressions, rolling windows, nested property paths, and advanced compositions remain outside this slice.
 
+## Badge rewards
+
+A versioned Rule may grant either XP or one Project-owned Badge. Badge Rules reuse the exact event type and optional exact top-level property conditions, and they do not combine with aggregate or daily gates in this slice. A Player can own each Project Badge only once. The first Badge Reward Grant remains in `reward_grants` with the triggering Event and Rule version, and the collection query returns the Badge display metadata with that audit context.
+
+Badge definitions are immutable and Project-scoped. Achievements remain progress milestones; Badges are collectible reward outcomes. This does not add multi-reward composition, rarity, trading, expiration, or revocation.
+
 ## Once-per-UTC-day rules
 
 The first time-aware capability is deliberately narrow: an immediate XP Rule may set `once_per_utc_day = true` to grant at most once for one Player on each UTC calendar day.

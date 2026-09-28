@@ -13,6 +13,7 @@ import (
 	recoverer "github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/putradwinandap/oke-gaas/internal/access"
 	"github.com/putradwinandap/oke-gaas/internal/achievement"
+	"github.com/putradwinandap/oke-gaas/internal/badge"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
 	eventdomain "github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/level"
@@ -32,6 +33,7 @@ type Dependencies struct {
 	Players      *player.Service
 	Levels       *level.Service
 	Counters     *counter.Service
+	Badges       *badge.Service
 	Achievements *achievement.Service
 	Rules        *rule.Service
 	Progress     *progression.Service
@@ -274,6 +276,77 @@ func New(dependencies ...Dependencies) *fiber.App {
 		})
 	})
 
+	app.Post("/v1/projects/:projectId/badges", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		var request struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		if err := c.Bind().Body(&request); err != nil {
+			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
+		}
+		value, err := deps.Badges.Create(ctx, projectID, request.Name, request.Description)
+		if err != nil {
+			switch {
+			case errors.Is(err, badge.ErrInvalidName), errors.Is(err, badge.ErrNameTooLong), errors.Is(err, badge.ErrDescriptionTooLong):
+				return writeError(c, fiber.StatusBadRequest, "invalid_badge", err.Error())
+			case errors.Is(err, badge.ErrAlreadyExists):
+				return writeError(c, fiber.StatusConflict, "badge_exists", err.Error())
+			case errors.Is(err, project.ErrNotFound):
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			default:
+				return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not create badge")
+			}
+		}
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"id": value.ID(), "project_id": value.ProjectID(), "name": value.Name(), "description": value.Description(), "created_at": value.CreatedAt()})
+	})
+	app.Get("/v1/projects/:projectId/badges", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		values, err := deps.Badges.List(ctx, projectID)
+		if err != nil {
+			if errors.Is(err, project.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not list badges")
+		}
+		items := make([]fiber.Map, 0, len(values))
+		for _, value := range values {
+			items = append(items, fiber.Map{"id": value.ID(), "project_id": value.ProjectID(), "name": value.Name(), "description": value.Description(), "created_at": value.CreatedAt()})
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "badges": items})
+	})
+	app.Get("/v1/projects/:projectId/players/:playerId/badges", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		playerID := c.Params("playerId")
+		values, err := deps.Badges.PlayerBadges(ctx, projectID, playerID)
+		if err != nil {
+			if errors.Is(err, player.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "player_not_found", "player not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not load player badges")
+		}
+		items := make([]fiber.Map, 0, len(values))
+		for _, value := range values {
+			items = append(items, fiber.Map{"badge_id": value.Definition.ID(), "name": value.Definition.Name(), "description": value.Definition.Description(), "event_id": value.Grant.EventID(), "rule_id": value.Grant.RuleID(), "rule_version": value.Grant.RuleVersion(), "granted_at": value.Grant.GrantedAt()})
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "player_id": playerID, "badges": items})
+	})
+
 	app.Post("/v1/projects/:projectId/achievements", func(c fiber.Ctx) error {
 		ctx, cancel := requestContext(c)
 		defer cancel()
@@ -292,9 +365,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 		value, err := deps.Achievements.Create(ctx, projectID, request.Name, request.CounterID, request.Target)
 		if err != nil {
 			switch {
-			case errors.Is(err, achievement.ErrInvalidName), errors.Is(err, achievement.ErrNameTooLong),
-				errors.Is(err, achievement.ErrInvalidCounterID), errors.Is(err, achievement.ErrCounterIDTooLong),
-				errors.Is(err, achievement.ErrInvalidTarget):
+			case errors.Is(err, achievement.ErrInvalidName), errors.Is(err, achievement.ErrNameTooLong), errors.Is(err, achievement.ErrInvalidCounterID), errors.Is(err, achievement.ErrCounterIDTooLong), errors.Is(err, achievement.ErrInvalidTarget):
 				return writeError(c, fiber.StatusBadRequest, "invalid_achievement", err.Error())
 			case errors.Is(err, achievement.ErrNameTaken):
 				return writeError(c, fiber.StatusConflict, "achievement_exists", err.Error())
@@ -308,7 +379,6 @@ func New(dependencies ...Dependencies) *fiber.App {
 		}
 		return c.Status(fiber.StatusCreated).JSON(achievementDefinitionResponse(value))
 	})
-
 	app.Get("/v1/projects/:projectId/achievements", func(c fiber.Ctx) error {
 		ctx, cancel := requestContext(c)
 		defer cancel()
@@ -323,13 +393,12 @@ func New(dependencies ...Dependencies) *fiber.App {
 			}
 			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not list achievements")
 		}
-		achievements := make([]fiber.Map, 0, len(values))
+		items := make([]fiber.Map, 0, len(values))
 		for _, value := range values {
-			achievements = append(achievements, achievementDefinitionResponse(value))
+			items = append(items, achievementDefinitionResponse(value))
 		}
-		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "achievements": achievements})
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "achievements": items})
 	})
-
 	app.Get("/v1/projects/:projectId/players/:playerId/achievements", func(c fiber.Ctx) error {
 		ctx, cancel := requestContext(c)
 		defer cancel()
@@ -344,7 +413,7 @@ func New(dependencies ...Dependencies) *fiber.App {
 			}
 			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not load player achievements")
 		}
-		achievements := make([]fiber.Map, 0, len(values))
+		items := make([]fiber.Map, 0, len(values))
 		for _, value := range values {
 			entry := achievementDefinitionResponse(value.Achievement)
 			entry["unlocked"] = value.Unlock != nil
@@ -353,9 +422,9 @@ func New(dependencies ...Dependencies) *fiber.App {
 				entry["counter_value"] = value.Unlock.CounterValue()
 				entry["unlocked_at"] = value.Unlock.UnlockedAt()
 			}
-			achievements = append(achievements, entry)
+			items = append(items, entry)
 		}
-		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "player_id": playerID, "achievements": achievements})
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "player_id": playerID, "achievements": items})
 	})
 
 	app.Post("/v1/projects/:projectId/rules", func(c fiber.Ctx) error {
@@ -366,6 +435,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 			return nil
 		}
 		var request struct {
+			RewardType    string         `json:"reward_type"`
+			BadgeID       string         `json:"badge_id"`
 			EventType     string         `json:"event_type"`
 			XP            int64          `json:"xp"`
 			Conditions    map[string]any `json:"conditions"`
@@ -379,11 +450,30 @@ func New(dependencies ...Dependencies) *fiber.App {
 		if request.MatchEvery != nil {
 			matchEvery = *request.MatchEvery
 		}
-		value, err := deps.Rules.CreateTimedXP(ctx, projectID, request.EventType, request.XP, request.Conditions, matchEvery, request.OncePerUTCDay)
+		var value *rule.Rule
+		var err error
+		if request.RewardType == rule.TypeBadge {
+			if request.XP != 0 {
+				return writeError(c, fiber.StatusBadRequest, "invalid_rule", "Badge rules must not set xp")
+			}
+			if matchEvery != 1 || request.OncePerUTCDay {
+				return writeError(c, fiber.StatusBadRequest, "invalid_rule", "Badge rules do not support aggregate or daily gates")
+			}
+			value, err = deps.Rules.CreateBadge(ctx, projectID, request.EventType, request.BadgeID, request.Conditions)
+		} else if request.RewardType == "" || request.RewardType == rule.TypeXP {
+			if request.BadgeID != "" {
+				return writeError(c, fiber.StatusBadRequest, "invalid_rule", "XP rules must not set badge_id")
+			}
+			value, err = deps.Rules.CreateTimedXP(ctx, projectID, request.EventType, request.XP, request.Conditions, matchEvery, request.OncePerUTCDay)
+		} else {
+			return writeError(c, fiber.StatusBadRequest, "invalid_rule", "unsupported reward_type")
+		}
 		if err != nil {
 			switch {
-			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrEventTypeTooLong), errors.Is(err, rule.ErrInvalidXPAmount), errors.Is(err, rule.ErrInvalidConditions), errors.Is(err, rule.ErrInvalidMatchEvery), errors.Is(err, rule.ErrIncompatibleTimeWindow):
+			case errors.Is(err, rule.ErrInvalidEventType), errors.Is(err, rule.ErrEventTypeTooLong), errors.Is(err, rule.ErrInvalidXPAmount), errors.Is(err, rule.ErrInvalidBadgeID), errors.Is(err, rule.ErrInvalidConditions), errors.Is(err, rule.ErrInvalidMatchEvery), errors.Is(err, rule.ErrIncompatibleTimeWindow):
 				return writeError(c, fiber.StatusBadRequest, "invalid_rule", err.Error())
+			case errors.Is(err, badge.ErrNotFound):
+				return writeError(c, fiber.StatusBadRequest, "invalid_rule", "badge must belong to this project")
 			case errors.Is(err, project.ErrNotFound):
 				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
 			default:
@@ -396,6 +486,8 @@ func New(dependencies ...Dependencies) *fiber.App {
 			"version":          value.Version(),
 			"event_type":       value.EventType(),
 			"xp":               value.XPAmount(),
+			"reward_type":      value.RewardType(),
+			"badge_id":         value.BadgeID(),
 			"conditions":       value.Conditions(),
 			"match_every":      value.MatchEvery(),
 			"once_per_utc_day": value.OncePerUTCDay(),
@@ -472,13 +564,17 @@ func New(dependencies ...Dependencies) *fiber.App {
 
 		grants := make([]fiber.Map, 0, len(result.Grants))
 		for _, grant := range result.Grants {
-			grants = append(grants, fiber.Map{
+			item := fiber.Map{
 				"id":           grant.ID(),
 				"rule_id":      grant.RuleID(),
 				"rule_version": grant.RuleVersion(),
 				"reward_type":  grant.Type(),
 				"amount":       grant.Amount(),
-			})
+			}
+			if grant.BadgeID() != "" {
+				item["badge_id"] = grant.BadgeID()
+			}
+			grants = append(grants, item)
 		}
 		currentLevel, err := deps.Levels.Resolve(ctx, projectID, result.State.XP())
 		if err != nil {
@@ -623,8 +719,5 @@ func writeError(c fiber.Ctx, status int, code, message string) error {
 }
 
 func achievementDefinitionResponse(value *achievement.Definition) fiber.Map {
-	return fiber.Map{
-		"id": value.ID(), "project_id": value.ProjectID(), "name": value.Name(),
-		"counter_id": value.CounterID(), "target": value.Target(), "created_at": value.CreatedAt(),
-	}
+	return fiber.Map{"id": value.ID(), "project_id": value.ProjectID(), "name": value.Name(), "counter_id": value.CounterID(), "target": value.Target(), "created_at": value.CreatedAt()}
 }

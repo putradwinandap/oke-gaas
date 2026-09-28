@@ -10,6 +10,7 @@ import (
 
 	"github.com/putradwinandap/oke-gaas/internal/access"
 	"github.com/putradwinandap/oke-gaas/internal/achievement"
+	"github.com/putradwinandap/oke-gaas/internal/badge"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
 	"github.com/putradwinandap/oke-gaas/internal/level"
 	"github.com/putradwinandap/oke-gaas/internal/platform/config"
@@ -72,22 +73,22 @@ func run() int {
 	states := database.NewPlayerStateRepository(db)
 	counters := database.NewCounterRepository(db)
 	playerCounters := database.NewPlayerCounterRepository(db)
+	badges := database.NewBadgeRepository(db)
+	badgeGrants := database.NewBadgeGrantRepository(db)
+	achievements := achievement.NewService(projects, players, counters, database.NewAchievementRepository(db), database.NewAchievementUnlockRepository(db))
 
 	app := httpserver.New(httpserver.Dependencies{
-		Projects: project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
-		Players:  player.NewService(projects, players),
-		Levels:   level.NewService(projects, levels),
-		Counters: counter.NewService(projects, players, counters, playerCounters),
-		Achievements: achievement.NewService(
-			projects, players, counters,
-			database.NewAchievementRepository(db),
-			database.NewAchievementUnlockRepository(db),
-		),
-		Rules:    rule.NewService(projects, rules),
-		Progress: progression.NewService(database.NewProgressionTransactor(db)),
-		States:   states,
-		Access:   access.NewService(database.NewProjectAPIKeyRepository(db)),
-		AdminKey: cfg.AdminAPIKey,
+		Projects:     project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
+		Players:      player.NewService(projects, players),
+		Levels:       level.NewService(projects, levels),
+		Counters:     counter.NewService(projects, players, counters, playerCounters),
+		Badges:       badge.NewService(projects, players, badges, badgeGrants),
+		Achievements: achievements,
+		Rules:        rule.NewServiceWithBadges(projects, rules, badges),
+		Progress:     progression.NewService(database.NewProgressionTransactor(db)),
+		States:       states,
+		Access:       access.NewService(database.NewProjectAPIKeyRepository(db)),
+		AdminKey:     cfg.AdminAPIKey,
 	})
 
 	slog.Info("starting Oke Gaas API", "address", cfg.HTTPAddr)

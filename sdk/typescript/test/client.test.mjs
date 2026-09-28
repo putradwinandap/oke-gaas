@@ -196,6 +196,38 @@ test("players and rules wrap the project-scoped REST endpoints", async () => {
   ]);
 });
 
+test("badges create definitions, configure Badge Rules, and map Player collections", async () => {
+  const requests = [];
+  await withServer(async (request, response) => {
+    const body = request.method === "POST" ? await readJson(request) : undefined;
+    requests.push({ method:request.method, url:request.url, body });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/projects/proj_test/badges" && request.method === "POST") {
+      response.writeHead(201); response.end(JSON.stringify({ id:"badge_1", project_id:"proj_test", name:body.name, description:body.description, created_at:"2026-09-28T10:00:00Z" })); return;
+    }
+    if (request.url === "/v1/projects/proj_test/badges" && request.method === "GET") {
+      response.writeHead(200); response.end(JSON.stringify({ project_id:"proj_test", badges:[{ id:"badge_1", project_id:"proj_test", name:"Early Adopter", description:"First cohort", created_at:"2026-09-28T10:00:00Z" }] })); return;
+    }
+    if (request.url === "/v1/projects/proj_test/rules") {
+      response.writeHead(201); response.end(JSON.stringify({ id:"rule_badge", project_id:"proj_test", version:1, event_type:body.event_type, reward_type:"badge", badge_id:body.badge_id, xp:0, conditions:body.conditions, match_every:1, once_per_utc_day:false })); return;
+    }
+    if (request.url === "/v1/projects/proj_test/players/player_123/badges") {
+      response.writeHead(200); response.end(JSON.stringify({ project_id:"proj_test", player_id:"player_123", badges:[{ badge_id:"badge_1", name:"Early Adopter", description:"First cohort", event_id:"evt_1", rule_id:"rule_badge", rule_version:1, granted_at:"2026-09-28T10:00:00Z" }] })); return;
+    }
+    response.writeHead(404); response.end(JSON.stringify({ error:{ code:"not_found", message:"not found" } }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId:"proj_test", apiKey:"secret-key", baseUrl });
+    assert.deepEqual(await gaas.badges.create({ name:"Early Adopter", description:"First cohort" }), { id:"badge_1", projectId:"proj_test", name:"Early Adopter", description:"First cohort", createdAt:"2026-09-28T10:00:00Z" });
+    assert.equal((await gaas.badges.list()).length, 1);
+    const rule = await gaas.rules.createBadge({ eventType:"lesson_completed", badgeId:"badge_1", conditions:{ course:"go" } });
+    assert.equal(rule.rewardType, "badge");
+    assert.equal(rule.badgeId, "badge_1");
+    assert.deepEqual(await gaas.players.getBadges("player_123"), [{ badgeId:"badge_1", name:"Early Adopter", description:"First cohort", eventId:"evt_1", ruleId:"rule_badge", ruleVersion:1, grantedAt:"2026-09-28T10:00:00Z" }]);
+  });
+  assert.deepEqual(requests[0].body, { name:"Early Adopter", description:"First cohort" });
+  assert.deepEqual(requests[2].body, { event_type:"lesson_completed", reward_type:"badge", badge_id:"badge_1", conditions:{ course:"go" } });
+});
+
 test("rules default matchEvery to one and reject invalid thresholds", async () => {
   await withServer(async (request, response) => {
     const body = await readJson(request);

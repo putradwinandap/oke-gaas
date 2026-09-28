@@ -31,16 +31,19 @@ func openRulesRewardsIntegrationDatabase(t *testing.T) *gorm.DB {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
-	for _, table := range []string{"project_api_keys", "event_processing", "rule_daily_claims", "rule_match_counts", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
+	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_badge_aware_event_processing() CASCADE").Error)
+	for _, table := range []string{"project_api_keys", "event_processing", "badge_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
 		"../../../migrations/000001_core.up.sql",
 		"../../../migrations/000002_events.up.sql",
 		"../../../migrations/000003_rules_rewards.up.sql",
+		"../../../migrations/000005_event_processing.up.sql",
 		"../../../migrations/000007_rule_conditions.up.sql",
 		"../../../migrations/000008_rule_match_counts.up.sql",
 		"../../../migrations/000009_rule_daily_claims.up.sql",
+		"../../../migrations/000013_badge_rewards.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)

@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-const TypeXP = "xp"
+const (
+	TypeXP    = "xp"
+	TypeBadge = "badge"
+)
 
 var (
 	ErrInvalidID          = errors.New("reward grant id is required")
@@ -32,7 +35,23 @@ type Grant struct {
 	ruleVersion uint64
 	rewardType  string
 	amount      int64
+	badgeID     string
 	createdAt   time.Time
+}
+
+// NewBadgeGrant creates an auditable grant for a collectible Badge.
+func NewBadgeGrant(id, projectID, playerID, eventID, ruleID string, ruleVersion uint64, badgeID string, createdAt time.Time) (*Grant, error) {
+	grant, err := NewGrant(id, projectID, playerID, eventID, ruleID, ruleVersion, 1, createdAt)
+	if err != nil {
+		return nil, err
+	}
+	grant.rewardType = TypeBadge
+	grant.amount = 0
+	grant.badgeID = strings.TrimSpace(badgeID)
+	if grant.badgeID == "" {
+		return nil, ErrInvalidType
+	}
+	return grant, nil
 }
 
 func NewGrant(id, projectID, playerID, eventID, ruleID string, ruleVersion uint64, amount int64, createdAt time.Time) (*Grant, error) {
@@ -73,6 +92,11 @@ func RestoreGrant(id, projectID, playerID, eventID, ruleID string, ruleVersion u
 	return NewGrant(id, projectID, playerID, eventID, ruleID, ruleVersion, amount, createdAt)
 }
 
+// RestoreBadgeGrant reconstructs a persisted Badge Reward Grant.
+func RestoreBadgeGrant(id, projectID, playerID, eventID, ruleID string, ruleVersion uint64, badgeID string, createdAt time.Time) (*Grant, error) {
+	return NewBadgeGrant(id, projectID, playerID, eventID, ruleID, ruleVersion, badgeID, createdAt)
+}
+
 func (g Grant) ID() string           { return g.id }
 func (g Grant) ProjectID() string    { return g.projectID }
 func (g Grant) PlayerID() string     { return g.playerID }
@@ -81,6 +105,7 @@ func (g Grant) RuleID() string       { return g.ruleID }
 func (g Grant) RuleVersion() uint64  { return g.ruleVersion }
 func (g Grant) Type() string         { return g.rewardType }
 func (g Grant) Amount() int64        { return g.amount }
+func (g Grant) BadgeID() string      { return g.badgeID }
 func (g Grant) CreatedAt() time.Time { return g.createdAt }
 
 // Repository stores immutable Reward Grants.

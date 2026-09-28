@@ -11,14 +11,16 @@ import (
 )
 
 type ruleRecord struct {
-	ProjectID     string `gorm:"type:varchar(64);primaryKey;not null"`
-	ID            string `gorm:"type:varchar(64);primaryKey;not null"`
-	Version       uint64 `gorm:"primaryKey;not null"`
-	EventType     string `gorm:"type:varchar(255);not null;index"`
-	XPAmount      int64  `gorm:"not null"`
-	Conditions    []byte `gorm:"type:jsonb;not null;default:'{}'"`
-	MatchEvery    uint64 `gorm:"not null;default:1"`
-	OncePerUTCDay bool   `gorm:"not null;default:false;check:chk_rules_daily_not_aggregate,NOT once_per_utc_day OR match_every = 1"`
+	ProjectID     string  `gorm:"type:varchar(64);primaryKey;not null"`
+	ID            string  `gorm:"type:varchar(64);primaryKey;not null"`
+	Version       uint64  `gorm:"primaryKey;not null"`
+	EventType     string  `gorm:"type:varchar(255);not null;index"`
+	RewardType    string  `gorm:"type:varchar(32);not null;default:xp"`
+	XPAmount      int64   `gorm:"not null"`
+	BadgeID       *string `gorm:"type:varchar(64)"`
+	Conditions    []byte  `gorm:"type:jsonb;not null;default:'{}'"`
+	MatchEvery    uint64  `gorm:"not null;default:1"`
+	OncePerUTCDay bool    `gorm:"not null;default:false;check:chk_rules_daily_not_aggregate,NOT once_per_utc_day OR match_every = 1"`
 }
 
 func (ruleRecord) TableName() string { return "rules" }
@@ -37,10 +39,15 @@ func (r *RuleRepository) Save(ctx context.Context, value *ruledomain.Rule) error
 		ID:            value.ID(),
 		Version:       value.Version(),
 		EventType:     value.EventType(),
+		RewardType:    value.RewardType(),
 		XPAmount:      value.XPAmount(),
 		Conditions:    conditions,
 		MatchEvery:    value.MatchEvery(),
 		OncePerUTCDay: value.OncePerUTCDay(),
+	}
+	if value.BadgeID() != "" {
+		badgeID := value.BadgeID()
+		record.BadgeID = &badgeID
 	}
 	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
 		mapped := mapPersistenceError(err)
@@ -56,14 +63,16 @@ func (r *RuleRepository) Save(ctx context.Context, value *ruledomain.Rule) error
 func (r *RuleRepository) ListByEventType(ctx context.Context, projectID, eventType string) ([]*ruledomain.Rule, error) {
 	var records []ruleRecord
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT project_id, id, version, event_type, xp_amount, conditions, match_every, once_per_utc_day
+		SELECT project_id, id, version, event_type, reward_type, xp_amount, badge_id, conditions, match_every, once_per_utc_day
 		FROM (
 			SELECT
 				project_id,
 				id,
 				version,
 				event_type,
+				reward_type,
 				xp_amount,
+				badge_id,
 				conditions,
 				match_every,
 				once_per_utc_day,
@@ -91,7 +100,16 @@ func (r *RuleRepository) ListByEventType(ctx context.Context, projectID, eventTy
 				return nil, fmt.Errorf("decode rule %s version %d conditions: %w", record.ID, record.Version, err)
 			}
 		}
-		value, err := ruledomain.Restore(record.ID, record.ProjectID, record.Version, record.EventType, record.XPAmount, conditions, record.MatchEvery, record.OncePerUTCDay)
+		var value *ruledomain.Rule
+		var err error
+		if record.RewardType == ruledomain.TypeBadge {
+			if record.BadgeID == nil {
+				return nil, fmt.Errorf("restore Badge rule %s version %d: Badge ID is missing", record.ID, record.Version)
+			}
+			value, err = ruledomain.RestoreBadge(record.ID, record.ProjectID, record.Version, record.EventType, *record.BadgeID, conditions)
+		} else {
+			value, err = ruledomain.Restore(record.ID, record.ProjectID, record.Version, record.EventType, record.XPAmount, conditions, record.MatchEvery, record.OncePerUTCDay)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("restore rule %s version %d: %w", record.ID, record.Version, err)
 		}
