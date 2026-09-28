@@ -285,9 +285,12 @@ func TestBadgeGrantRollsBackWithEventWhenPlayerStateUpdateFails(t *testing.T) {
 	badge, err := badgedomain.New("badge_rollback", proj.ID(), "Rollback Badge", "", time.Now())
 	require.NoError(t, err)
 	require.NoError(t, NewBadgeRepository(db).Save(ctx, badge))
-	badgeRule, err := ruledomain.NewBadge("rule_badge_rollback", proj.ID(), 1, "lesson_completed", badge.ID(), nil)
+	badgeRule, err := ruledomain.NewBadge("rule_a_badge_rollback", proj.ID(), 1, "lesson_completed", badge.ID(), nil)
 	require.NoError(t, err)
 	require.NoError(t, NewRuleRepository(db).Save(ctx, badgeRule))
+	xpRule, err := ruledomain.New("rule_z_xp_overflow", proj.ID(), 1, "lesson_completed", 1)
+	require.NoError(t, err)
+	require.NoError(t, NewRuleRepository(db).Save(ctx, xpRule))
 
 	_, err = NewPlayerStateRepository(db).AddXP(ctx, proj.ID(), pl.ID(), int64(^uint64(0)>>1), time.Now())
 	require.NoError(t, err)
@@ -480,7 +483,8 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
-	for _, table := range []string{"project_api_keys", "event_processing", "player_counters", "counter_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "level_thresholds", "reward_grants", "rules", "events", "players", "projects"} {
+	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_badge_aware_event_processing() CASCADE").Error)
+	for _, table := range []string{"project_api_keys", "event_processing", "badge_definitions", "player_counters", "counter_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "level_thresholds", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -536,7 +540,10 @@ func TestAutoMigrateDevelopmentBackfillsHistoricalProgressionState(t *testing.T)
 		time.Now().Add(-30*time.Minute),
 	)
 	require.NoError(t, err)
-	require.NoError(t, NewRewardGrantRepository(db).Save(ctx, grant))
+	require.NoError(t, db.Exec(
+		"INSERT INTO reward_grants (id, project_id, player_id, event_id, rule_id, rule_version, amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		grant.ID(), grant.ProjectID(), grant.PlayerID(), grant.EventID(), grant.RuleID(), grant.RuleVersion(), grant.Amount(), grant.CreatedAt(),
+	).Error)
 
 	require.NoError(t, AutoMigrateCoreForDevelopment(db))
 
