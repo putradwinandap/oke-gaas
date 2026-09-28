@@ -40,6 +40,12 @@ export interface CreateCounterInput {
   conditions?: Record<string, unknown>;
 }
 
+export interface CreateAchievementInput {
+  name: string;
+  counterId: string;
+  target: number;
+}
+
 export interface Rule {
   id: string;
   projectId: string;
@@ -109,6 +115,22 @@ export interface PlayerCounterProgress {
   conditions: Record<string, unknown>;
   value: number;
   updatedAt?: string;
+}
+
+export interface AchievementDefinition {
+  id: string;
+  projectId: string;
+  name: string;
+  counterId: string;
+  target: number;
+  createdAt: string;
+}
+
+export interface PlayerAchievementProgress extends AchievementDefinition {
+  unlocked: boolean;
+  eventId?: string;
+  counterValue?: number;
+  unlockedAt?: string;
 }
 
 interface ApiErrorEnvelope {
@@ -205,6 +227,33 @@ interface ApiPlayerCounterList {
   counters: ApiPlayerCounterProgress[];
 }
 
+interface ApiAchievement {
+  id: string;
+  project_id: string;
+  name: string;
+  counter_id: string;
+  target: number;
+  created_at: string;
+}
+
+interface ApiAchievementList {
+  project_id: string;
+  achievements: ApiAchievement[];
+}
+
+interface ApiPlayerAchievementProgress extends ApiAchievement {
+  unlocked: boolean;
+  event_id?: string;
+  counter_value?: number;
+  unlocked_at?: string;
+}
+
+interface ApiPlayerAchievementList {
+  project_id: string;
+  player_id: string;
+  achievements: ApiPlayerAchievementProgress[];
+}
+
 interface RequestResult {
   payload: unknown;
   status: number;
@@ -236,6 +285,8 @@ export interface GaasClient {
     get(playerId: string, options?: RequestOptions): Promise<PlayerState>;
     /** Retrieve all Project Counter progress for the Player, including zero values. */
     getCounters(playerId: string, options?: RequestOptions): Promise<PlayerCounterProgress[]>;
+    /** Retrieve Project Achievements and this Player's immutable unlock status. */
+    getAchievements(playerId: string, options?: RequestOptions): Promise<PlayerAchievementProgress[]>;
   };
   rules: {
     /** Create a version-1 exact-event XP rule. */
@@ -248,6 +299,10 @@ export interface GaasClient {
   counters: {
     create(input: CreateCounterInput, options?: RequestOptions): Promise<CounterDefinition>;
     list(options?: RequestOptions): Promise<CounterDefinition[]>;
+  };
+  achievements: {
+    create(input: CreateAchievementInput, options?: RequestOptions): Promise<AchievementDefinition>;
+    list(options?: RequestOptions): Promise<AchievementDefinition[]>;
   };
 }
 
@@ -426,6 +481,33 @@ export function createGaas(config: GaasConfig): GaasClient {
           ...(entry.updated_at === undefined ? {} : { updatedAt: entry.updated_at }),
         }));
       },
+
+      async getAchievements(playerId, options) {
+        const normalizedPlayerId = requireNonEmpty(playerId, "playerId");
+        const result = await request(
+          `${projectPath}/players/${encodeURIComponent(normalizedPlayerId)}/achievements`,
+          {},
+          options,
+        );
+        const value = requireApiPlayerAchievementList(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        requireResponseInvariant(value.player_id === normalizedPlayerId, result.status);
+        return value.achievements.map((entry) => {
+          requireResponseInvariant(entry.project_id === projectId, result.status);
+          return {
+            id: entry.id,
+            projectId: entry.project_id,
+            name: entry.name,
+            counterId: entry.counter_id,
+            target: entry.target,
+            createdAt: entry.created_at,
+            unlocked: entry.unlocked,
+            ...(entry.event_id === undefined ? {} : { eventId: entry.event_id }),
+            ...(entry.counter_value === undefined ? {} : { counterValue: entry.counter_value }),
+            ...(entry.unlocked_at === undefined ? {} : { unlockedAt: entry.unlocked_at }),
+          };
+        });
+      },
     },
 
     levels: {
@@ -536,6 +618,39 @@ export function createGaas(config: GaasConfig): GaasClient {
           conditions: entry.conditions,
           createdAt: entry.created_at,
         }));
+      },
+    },
+
+    achievements: {
+      async create(input, options) {
+        const name = requireNonEmpty(input.name, "name");
+        const counterId = requireNonEmpty(input.counterId, "counterId");
+        if (counterId.length > 64) throw new TypeError("counterId must not exceed 64 characters");
+        const target = requirePositiveSafeInteger(input.target, "target");
+        const result = await request(
+          `${projectPath}/achievements`,
+          { method: "POST", body: stringifyJson({ name, counter_id: counterId, target }) },
+          options,
+        );
+        const value = requireApiAchievement(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        requireResponseInvariant(value.name === name, result.status);
+        requireResponseInvariant(value.counter_id === counterId, result.status);
+        requireResponseInvariant(value.target === target, result.status);
+        return { id:value.id, projectId:value.project_id, name:value.name, counterId:value.counter_id, target:value.target, createdAt:value.created_at };
+      },
+
+      async list(options) {
+        const result = await request(`${projectPath}/achievements`, {}, options);
+        const value = requireApiAchievementList(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        return value.achievements.map((entry) => {
+          requireResponseInvariant(entry.project_id === projectId, result.status);
+          return {
+            id:entry.id, projectId:entry.project_id, name:entry.name, counterId:entry.counter_id,
+            target:entry.target, createdAt:entry.created_at,
+          };
+        });
       },
     },
   };
@@ -715,6 +830,21 @@ function requireApiPlayerCounterList(value: unknown, status: number): ApiPlayerC
   return value;
 }
 
+function requireApiAchievement(value: unknown, status: number): ApiAchievement {
+  if (!isApiAchievement(value)) throw invalidResponse(status);
+  return value;
+}
+
+function requireApiAchievementList(value: unknown, status: number): ApiAchievementList {
+  if (!isApiAchievementList(value)) throw invalidResponse(status);
+  return value;
+}
+
+function requireApiPlayerAchievementList(value: unknown, status: number): ApiPlayerAchievementList {
+  if (!isApiPlayerAchievementList(value)) throw invalidResponse(status);
+  return value;
+}
+
 function requireResponseInvariant(condition: boolean, status: number): void {
   if (!condition) {
     throw invalidResponse(status);
@@ -795,6 +925,42 @@ function isApiLevelList(value: unknown): value is ApiLevelList {
     && typeof value.project_id === "string"
     && Array.isArray(value.levels)
     && value.levels.every(isApiLevelThreshold);
+}
+
+function isApiAchievement(value: unknown): value is ApiAchievement {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.project_id === "string"
+    && typeof value.name === "string"
+    && typeof value.counter_id === "string"
+    && isPositiveSafeInteger(value.target)
+    && typeof value.created_at === "string";
+}
+
+function isApiAchievementList(value: unknown): value is ApiAchievementList {
+  return isRecord(value)
+    && typeof value.project_id === "string"
+    && Array.isArray(value.achievements)
+    && value.achievements.every(isApiAchievement);
+}
+
+function isApiPlayerAchievementProgress(value: unknown): value is ApiPlayerAchievementProgress {
+  if (!isApiAchievement(value) || !isRecord(value) || typeof value.unlocked !== "boolean") return false;
+  const progress = value as unknown as ApiPlayerAchievementProgress;
+  if (!progress.unlocked) {
+    return progress.event_id === undefined && progress.counter_value === undefined && progress.unlocked_at === undefined;
+  }
+  return typeof progress.event_id === "string"
+    && isPositiveSafeInteger(progress.counter_value)
+    && typeof progress.unlocked_at === "string";
+}
+
+function isApiPlayerAchievementList(value: unknown): value is ApiPlayerAchievementList {
+  return isRecord(value)
+    && typeof value.project_id === "string"
+    && typeof value.player_id === "string"
+    && Array.isArray(value.achievements)
+    && value.achievements.every(isApiPlayerAchievementProgress);
 }
 
 function isApiCounter(value: unknown): value is ApiCounter {

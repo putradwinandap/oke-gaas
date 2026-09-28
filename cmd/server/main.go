@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/achievement"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
 	"github.com/putradwinandap/oke-gaas/internal/level"
 	"github.com/putradwinandap/oke-gaas/internal/platform/config"
@@ -77,6 +78,11 @@ func run() int {
 		Players:  player.NewService(projects, players),
 		Levels:   level.NewService(projects, levels),
 		Counters: counter.NewService(projects, players, counters, playerCounters),
+		Achievements: achievement.NewService(
+			projects, players, counters,
+			database.NewAchievementRepository(db),
+			database.NewAchievementUnlockRepository(db),
+		),
 		Rules:    rule.NewService(projects, rules),
 		Progress: progression.NewService(database.NewProgressionTransactor(db)),
 		States:   states,

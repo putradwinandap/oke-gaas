@@ -6,11 +6,13 @@ import (
 	"math"
 	"time"
 
+	"github.com/putradwinandap/oke-gaas/internal/achievement"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
 	"github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/player"
 	"github.com/putradwinandap/oke-gaas/internal/reward"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
+	"github.com/putradwinandap/oke-gaas/internal/shared/identity"
 )
 
 // ProcessingClaims coordinates exactly-once processing attempts for a persisted Event.
@@ -29,6 +31,8 @@ type Work struct {
 	DailyClaims        reward.DailyClaimer
 	CounterDefinitions counter.Repository
 	CounterStates      counter.StateRepository
+	Achievements       achievement.Repository
+	AchievementUnlocks achievement.UnlockRepository
 	States             Repository
 	Claims             ProcessingClaims
 }
@@ -107,8 +111,14 @@ func (s *Service) Process(ctx context.Context, command event.IngestCommand) (*Pr
 		if err != nil {
 			return fmt.Errorf("process rewards: %w", err)
 		}
-		if err := counter.ProcessEvent(ctx, work.CounterDefinitions, work.CounterStates, ingested.Event); err != nil {
+		counterValues, err := counter.ProcessEventWithValues(ctx, work.CounterDefinitions, work.CounterStates, ingested.Event)
+		if err != nil {
 			return fmt.Errorf("process player counters: %w", err)
+		}
+		if err := achievement.ProcessEvent(ctx, work.Achievements, work.AchievementUnlocks, counterValues, ingested.Event, ingested.Event.ReceivedAt(), func() (string, error) {
+			return identity.New("unlock")
+		}); err != nil {
+			return fmt.Errorf("process achievement unlocks: %w", err)
 		}
 
 		var xp int64
