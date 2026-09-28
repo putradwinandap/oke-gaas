@@ -121,17 +121,27 @@ func (r Rule) OncePerUTCDay() bool { return r.oncePerUTCDay }
 // Conditions returns a deep copy of the exact top-level property conditions.
 func (r Rule) Conditions() map[string]any { return cloneJSONObject(r.conditions) }
 
+// NormalizeConditions validates and normalizes exact top-level JSON conditions.
+func NormalizeConditions(value map[string]any) (map[string]any, error) {
+	return normalizeJSONObject(value)
+}
+
+// CloneConditions returns a deep copy of normalized conditions.
+func CloneConditions(value map[string]any) map[string]any {
+	return cloneJSONObject(value)
+}
+
 // Matches reports whether this rule applies to the supplied Event.
 func (r Rule) Matches(value *event.Event) bool {
 	if value == nil || value.ProjectID() != r.projectID || value.Type() != r.eventType {
 		return false
 	}
-	if len(r.conditions) == 0 {
-		return true
-	}
+	return MatchesConditions(r.conditions, value.Properties())
+}
 
-	properties := value.Properties()
-	for key, expected := range r.conditions {
+// MatchesConditions reports whether every configured exact top-level condition is present.
+func MatchesConditions(conditions, properties map[string]any) bool {
+	for key, expected := range conditions {
 		actual, ok := properties[key]
 		if !ok || !sameJSONValue(expected, actual) {
 			return false

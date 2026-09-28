@@ -12,6 +12,7 @@ Examples include:
 
 - players
 - events
+- counters
 - rules
 - reward grants
 - leaderboards

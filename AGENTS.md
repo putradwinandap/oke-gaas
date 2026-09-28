@@ -136,7 +136,8 @@ internal/event/              External Event domain + idempotent ingestion servic
 internal/rule/               Versioned exact-event XP Rule domain with optional exact top-level property conditions, count thresholds, and once-per-UTC-day gating + repository interface
 internal/reward/             Auditable XP Reward Grant domain + evaluation service + repository interface
 internal/level/              Project-scoped immutable XP Level thresholds and XP-to-Level resolution
-internal/progression/          Materialized Player State + transactional Event -> Reward -> State orchestration
+internal/counter/             Immutable Project Counter definitions + Player-visible current progress
+internal/progression/         Materialized Player State + transactional Event -> Reward -> Counter -> State orchestration
 internal/platform/database/  GORM/PostgreSQL records, queries, transactions, and migrations
 internal/platform/telemetry/ OpenTelemetry provider setup, OTLP export, and shutdown lifecycle
 ```
@@ -231,7 +232,7 @@ Rules:
 - production deployments must apply versioned migrations as an explicit deployment step before running code that depends on the new schema
 - the self-hosting baseline pins `migrate/migrate:v4.19.1` and must not start the API until the migration job succeeds
 - destructive or irreversible migrations require an explicit rollback/forward-fix plan
-- migrations that introduce semantics older binaries cannot interpret must fail closed on schema rollback once those semantics are active; for aggregate Rules introduced by migration 000008, a pre-000008 application binary must not run after any `match_every > 1` Rule has been created; for once-per-UTC-day Rules introduced by migration 000009, a pre-000009 application binary must not run after any `once_per_utc_day = true` Rule has been created
+- migrations that introduce semantics older binaries cannot interpret must fail closed on schema rollback once those semantics are active; for aggregate Rules introduced by migration 000008, a pre-000008 application binary must not run after any `match_every > 1` Rule has been created; for once-per-UTC-day Rules introduced by migration 000009, a pre-000009 application binary must not run after any `once_per_utc_day = true` Rule has been created; for Player Counters introduced by migration 000011, a Project with a Counter definition must reject Event processing by binaries that do not declare Counter-aware processing
 
 GORM model tags remain useful mapping metadata, but they are not the production migration source of truth.
 
@@ -293,7 +294,7 @@ SDKs are integration clients.
 
 They should make Oke Gaas easy to consume without duplicating business logic that belongs in Core or the Server.
 
-The initial JavaScript/TypeScript SDK lives under `sdk/typescript/` and is Project-scoped. It may handle transport concerns such as bearer authentication, request construction, transport-field mapping, runtime response validation, finite client deadlines, caller cancellation, safe API-error normalization, and convenience event-ID generation. It must not evaluate Rules, calculate Rewards/XP, reproduce tenant authorization, infer Player State locally, or replace server transaction/idempotency semantics. Public numeric values mapped to JavaScript `number` must be rejected when they fall outside the safe-integer range rather than silently losing precision.
+The initial JavaScript/TypeScript SDK lives under `sdk/typescript/` and is Project-scoped. It may handle transport concerns such as bearer authentication, request construction, transport-field mapping, runtime response validation, finite client deadlines, caller cancellation, safe API-error normalization, and convenience event-ID generation. It must not evaluate Rules, calculate Rewards/XP, reproduce tenant authorization, infer Player State or Counter progress locally, or replace server transaction/idempotency semantics. Public numeric values mapped to JavaScript `number` must be rejected when they fall outside the safe-integer range rather than silently losing precision.
 
 Project API keys are secrets. The initial SDK is intended for trusted server-side or otherwise controlled runtimes and must not encourage embedding Project API keys in public browser bundles. Project provisioning remains an operator/admin concern and must not be mixed into the normal Project-key SDK client.
 
@@ -333,6 +334,7 @@ This includes, where applicable:
 - rules
 - reward grants
 - aggregate rule progress
+- player-visible Counter definitions and values
 - time-aware rule claims
 - leaderboards
 - achievements
@@ -353,7 +355,9 @@ The first REST vertical slice uses two bearer-key roles:
 
 Project API keys must be generated from cryptographically secure randomness, returned to the caller only when provisioned, and persisted only as one-way hashes. HTTP application operations that touch persistence must run with an explicit finite request-operation deadline so abandoned or stalled requests cannot hold database work indefinitely. The Fiber adapter must recover handler panics and route unexpected transport errors through the same sanitized JSON error envelope; raw internal error strings must not be returned to API clients. Project-key verification must bind the credential to the Project identified by the route; a credential for Project A must not authorize any operation under Project B.
 
-Public identifiers generated by Oke Gaas use semantic prefixes with opaque random suffixes (`proj_`, `player_`, `rule_`, `grant_`). External `event_id` remains caller-supplied and Project-scoped for idempotency. Clients must treat all identifiers as opaque. Public request fields must be validated against persistence limits before repository calls so oversized client input returns a 4xx response rather than surfacing as a database-driven 5xx.
+Public identifiers generated by Oke Gaas use semantic prefixes with opaque random suffixes (`proj_`, `player_`, `rule_`, `counter_`, `grant_`). External `event_id` remains caller-supplied and Project-scoped for idempotency. Clients must treat all identifiers as opaque. Public request fields must be validated against persistence limits before repository calls so oversized client input returns a 4xx response rather than surfacing as a database-driven 5xx.
+
+Project Counters are immutable Project-scoped definitions matched by exact Event type and optional exact top-level properties. Accepted matching Events increment each applicable Player Counter once inside the Event processing transaction. Duplicate retries do not increment; Counter progress rolls back with any later processing failure. `player_counters` is distinct from Rule aggregate evaluation state and is exposed as current Player progress, including zero values for configured Counters with no matches.
 
 ---
 
@@ -421,7 +425,7 @@ Event identity supports:
 
 Event identity is scoped to a Project. Reusing the same Project + Event identity with the same logical payload is an idempotent retry and returns the originally persisted Event. Reusing that identity with different logical event data is rejected as an identity conflict. Event properties are normalized through JSON before comparison; JSON numbers are compared by exact numeric value so PostgreSQL `jsonb` representation changes do not create false conflicts. Event timestamps are normalized to PostgreSQL microsecond precision before persistence and comparison.
 
-Player ownership must be verified within the Event's Project before persistence, and persistence must also enforce the Project/Player relationship. Duplicate detection must not abort an enclosing PostgreSQL transaction; persistence should use conflict-safe insertion or an equivalent transaction-safe mechanism. Event identity and processing completion are separate concerns: `event_processing` records a transaction-scoped processing claim/completion so retries can distinguish an already-settled Event from an Event merely present in storage. The claim must commit or roll back with Reward Grants and Player State.
+Player ownership must be verified within the Event's Project before persistence, and persistence must also enforce the Project/Player relationship. Duplicate detection must not abort an enclosing PostgreSQL transaction; persistence should use conflict-safe insertion or an equivalent transaction-safe mechanism. Event identity and processing completion are separate concerns: `event_processing` records a transaction-scoped processing claim/completion so retries can distinguish an already-settled Event from an Event merely present in storage. The claim must commit or roll back with Reward Grants, Player Counter progress, and Player State.
 
 The exact public API shape is not yet permanently locked, but implementation must preserve these semantics.
 
@@ -444,9 +448,11 @@ Historical reward records must be traceable to the specific rule version that pr
 
 For the initial rule model, the highest persisted version of a given `rule_id` is the active version. Older versions remain immutable for auditability and must not be evaluated alongside the current version.
 
+Player-visible Counters are separate immutable Project definitions, matched by exact Event type and optional exact top-level properties. Accepted matching Events increment each applicable Player's current value once, in the same transaction as Event processing, Reward Grants, and Player State. Duplicate Event retries do not increment again; later processing failures roll Counter updates back. Rule aggregate counts remain private Rule-evaluation state and are not public Player progress.
+
 Rules may optionally require exact matches on top-level Event properties. Every configured condition must match. Condition values use JSON value semantics, including exact object/array structure and numeric-value equivalence.
 
-The first aggregate rule capability is intentionally narrow: a Rule may define `match_every = N` and grant XP on every Nth Event that already matches that exact Rule version's event type and property conditions for one Player. `match_every = 1` preserves immediate reward behavior. Aggregate progress is scoped by Project + Player + Rule identity + Rule version, persisted in `rule_match_counts`, and incremented atomically inside the same PostgreSQL transaction as Event processing, Reward Grants, and Player State. Duplicate Event retries must not advance aggregate progress twice, and concurrent distinct matching Events must serialize their counter increments so a threshold is granted at most once.
+The first aggregate rule capability is intentionally narrow: a Rule may define `match_every = N` and grant XP on every Nth Event that already matches that exact Rule version's event type and property conditions for one Player. `match_every = 1` preserves immediate reward behavior. Aggregate progress is scoped by Project + Player + Rule identity + Rule version, persisted in `rule_match_counts`, and incremented atomically inside the same PostgreSQL transaction as Event processing, Reward Grants, and Player State. Duplicate Event retries must not advance aggregate progress twice, and concurrent distinct matching Events must serialize their counter increments so a threshold is granted at most once. This internal Rule evaluation state is separate from player-visible Counters.
 
 The first time-aware rule capability is also intentionally narrow: an immediate XP Rule may set `once_per_utc_day = true` to grant at most once for one Player on each UTC calendar day. The day is derived from the Event's normalized `occurred_at`, not server receipt time. Claims are scoped by Project + Player + Rule identity + Rule version + UTC day, persisted in `rule_daily_claims`, and created atomically inside the same transaction as Event processing, Reward Grants, and Player State. Concurrent distinct same-day Events must therefore produce at most one grant, while the next UTC day may grant again. This first slice does not compose daily gating with count thresholds: `once_per_utc_day = true` requires `match_every = 1`.
 
@@ -506,7 +512,7 @@ Reward Grant
 Player State
 ```
 
-`Player State` is a current materialized representation for efficient reads. The initial concrete state stores Project-scoped Player XP in `player_states` and is updated atomically with Reward Grants inside the same PostgreSQL transaction. Player State is derived/materialized data; Reward Grants remain the auditable historical source for why XP changed.
+`Player State` is a current materialized representation for efficient reads. The initial concrete state stores Project-scoped Player XP in `player_states` and is updated atomically with Reward Grants inside the same PostgreSQL transaction. Player State is derived/materialized data; Reward Grants remain the auditable historical source for why XP changed. Player-visible Counters are separately materialized per Project + Player + Counter in `player_counters` and advance in that same Event transaction.
 
 Levels are a derived progression view over Player XP. Level 1 is implicit at 0 XP. Projects may append immutable, contiguous Level thresholds with strictly increasing XP requirements; current Level is resolved from the Project-scoped threshold ladder and must not become a second mutable source of truth. Named tiers, mutable ladders, per-level rewards, prestige, formulas, and a general progression DSL remain out of scope until concrete use cases justify them. See `docs/concepts/levels.md`.
 
@@ -538,6 +544,7 @@ validate project/player ownership
 persist or deduplicate event
 evaluate applicable rules
 create reward grants
+increment matching Player Counters
 update player state
 
 COMMIT
@@ -545,7 +552,7 @@ COMMIT
 
 Invariant:
 
-> An accepted event must not leave reward history and player state in an unintentionally inconsistent partial state.
+> An accepted event must not leave reward history, Player Counter progress, and Player State in an unintentionally inconsistent partial state.
 
 External side effects such as webhook delivery must not compromise the core transaction.
 
@@ -942,4 +949,4 @@ When product detail becomes durable technical knowledge, move the technical expl
 
 When context is limited, preserve at least this:
 
-> Oke Gaas uses Go with Fiber v3, GORM, and PostgreSQL in an event-driven modular monolith with lightweight DDD and synchronous processing first. The initial self-hosting baseline uses Docker Compose with PostgreSQL, a pinned one-shot migration runner, and a non-root API container; ordered migrations must complete before API startup. The initial REST API uses an operator key for Project provisioning and hashed per-Project bearer keys for Project-scoped operations. The canonical domain flow is **Event -> Rule -> Reward -> Player State**. Use **Player** for gamified end users. Project is the tenant/isolation boundary. Events require stable identity and idempotent ingestion. Rewards must produce an auditable reward ledger and rules are version-aware. Preserve transactional consistency between event processing, reward grants, and player state. Do not introduce microservices, a message broker, or full Event Sourcing without a concrete requirement. Unit tests are mandatory. Maintain code/style consistency, update AGENTS.md whenever architecture or engineering consistency changes, and after merge delete completed branches and update/close the related issue.
+> Oke Gaas uses Go with Fiber v3, GORM, and PostgreSQL in an event-driven modular monolith with lightweight DDD and synchronous processing first. The initial self-hosting baseline uses Docker Compose with PostgreSQL, a pinned one-shot migration runner, and a non-root API container; ordered migrations must complete before API startup. The initial REST API uses an operator key for Project provisioning and hashed per-Project bearer keys for Project-scoped operations. The canonical domain flow is **Event -> Rule -> Reward -> Counter / Player State**. Use **Player** for gamified end users. Project is the tenant/isolation boundary. Events require stable identity and idempotent ingestion. Rewards must produce an auditable reward ledger and rules are version-aware. Preserve transactional consistency between event processing, reward grants, Player Counter progress, and Player State. Do not introduce microservices, a message broker, or full Event Sourcing without a concrete requirement. Unit tests are mandatory. Maintain code/style consistency, update AGENTS.md whenever architecture or engineering consistency changes, and after merge delete completed branches and update/close the related issue.

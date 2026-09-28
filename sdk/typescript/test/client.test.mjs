@@ -347,3 +347,110 @@ test("levels append immutable thresholds and list the implicit level one", async
     ]);
   });
 });
+
+test("counters create, list, and retrieve Player progress", async () => {
+  let call = 0;
+  await withServer(async (request, response) => {
+    call += 1;
+    response.setHeader("content-type", "application/json");
+    if (call === 1) {
+      assert.equal(request.method, "POST");
+      assert.equal(request.url, "/v1/projects/proj_test/counters");
+      assert.deepEqual(await readJson(request), {
+        name: "lessons_completed",
+        event_type: "lesson_completed",
+        conditions: { course_id: "course_7" },
+      });
+      response.writeHead(201);
+      response.end(JSON.stringify({
+        id: "counter_123",
+        project_id: "proj_test",
+        name: "lessons_completed",
+        event_type: "lesson_completed",
+        conditions: { course_id: "course_7" },
+        created_at: "2026-09-28T10:00:00Z",
+      }));
+      return;
+    }
+    if (call === 2) {
+      assert.equal(request.method, "GET");
+      assert.equal(request.url, "/v1/projects/proj_test/counters");
+      response.writeHead(200);
+      response.end(JSON.stringify({
+        project_id: "proj_test",
+        counters: [{
+          id: "counter_123",
+          project_id: "proj_test",
+          name: "lessons_completed",
+          event_type: "lesson_completed",
+          conditions: { course_id: "course_7" },
+          created_at: "2026-09-28T10:00:00Z",
+        }],
+      }));
+      return;
+    }
+
+    assert.equal(request.method, "GET");
+    assert.equal(request.url, "/v1/projects/proj_test/players/player_123/counters");
+    response.writeHead(200);
+    response.end(JSON.stringify({
+      project_id: "proj_test",
+      player_id: "player_123",
+      counters: [{
+        counter_id: "counter_123",
+        name: "lessons_completed",
+        event_type: "lesson_completed",
+        conditions: { course_id: "course_7" },
+        value: 3,
+        updated_at: "2026-09-28T10:00:00Z",
+      }],
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
+    const created = await gaas.counters.create({
+      name: "lessons_completed",
+      eventType: "lesson_completed",
+      conditions: { course_id: "course_7" },
+    });
+    assert.deepEqual(created, {
+      id: "counter_123",
+      projectId: "proj_test",
+      name: "lessons_completed",
+      eventType: "lesson_completed",
+      conditions: { course_id: "course_7" },
+      createdAt: "2026-09-28T10:00:00Z",
+    });
+    assert.deepEqual(await gaas.counters.list(), [created]);
+    assert.deepEqual(await gaas.players.getCounters("player_123"), [{
+      counterId: "counter_123",
+      name: "lessons_completed",
+      eventType: "lesson_completed",
+      conditions: { course_id: "course_7" },
+      value: 3,
+      updatedAt: "2026-09-28T10:00:00Z",
+    }]);
+  });
+});
+
+test("Player Counter progress rejects unsafe integer responses", async () => {
+  await withServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      project_id: "proj_test",
+      player_id: "player_123",
+      counters: [{
+        counter_id: "counter_123",
+        name: "lessons_completed",
+        event_type: "lesson_completed",
+        conditions: {},
+        value: Number.MAX_SAFE_INTEGER + 1,
+      }],
+    }));
+  }, async (baseUrl) => {
+    const gaas = createGaas({ projectId: "proj_test", apiKey: "secret-key", baseUrl });
+    await assert.rejects(
+      () => gaas.players.getCounters("player_123"),
+      (error) => error instanceof GaasError && error.code === "invalid_response",
+    );
+  });
+});

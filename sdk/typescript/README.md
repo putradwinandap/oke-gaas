@@ -62,7 +62,23 @@ await gaas.track("purchase_completed", {
 });
 ```
 
-The current SDK also exposes the thin MVP setup wrappers `players.create()` and `rules.create()` so an integration can exercise the complete Project-scoped vertical slice. Project provisioning remains an operator/admin API concern and is intentionally not exposed through this Project-key client.
+The current SDK also exposes the thin MVP setup wrappers `players.create()`, `rules.create()`, and `counters.create()` so an integration can exercise the complete Project-scoped vertical slice. Project provisioning remains an operator/admin API concern and is intentionally not exposed through this Project-key client.
+
+### Player-visible counters
+
+Create an immutable Counter for an exact Event type, optionally narrowed by exact top-level Event properties, then read its current value for a Player:
+
+```ts
+await gaas.counters.create({
+  name: "completed lessons",
+  eventType: "lesson_completed",
+  conditions: { course_id: "course_7" },
+});
+
+const counters = await gaas.players.getCounters("player_123");
+```
+
+The response includes every Counter in the Project, with zero for Counters the Player has not matched. Accepted matching Events increment the value once; duplicate Event retries do not increment it again.
 
 Every SDK operation accepts an optional request-options argument with an `AbortSignal`:
 

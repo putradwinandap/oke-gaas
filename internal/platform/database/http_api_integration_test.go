@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/counter"
 	"github.com/putradwinandap/oke-gaas/internal/level"
 	database "github.com/putradwinandap/oke-gaas/internal/platform/database"
 	httpserver "github.com/putradwinandap/oke-gaas/internal/platform/http"
@@ -39,9 +40,12 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
+	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
 	for _, table := range []string{
 		"project_api_keys",
 		"event_processing",
+		"player_counters",
+		"counter_definitions",
 		"rule_daily_claims",
 		"rule_match_counts",
 		"player_states",
@@ -65,6 +69,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000008_rule_match_counts.up.sql",
 		"../../../migrations/000009_rule_daily_claims.up.sql",
 		"../../../migrations/000010_level_thresholds.up.sql",
+		"../../../migrations/000011_counters.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -78,10 +83,13 @@ func newHTTPIntegrationApp(db *gorm.DB) *fiber.App {
 	projects := database.NewProjectRepository(db)
 	players := database.NewPlayerRepository(db)
 	rules := database.NewRuleRepository(db)
+	counters := database.NewCounterRepository(db)
+	playerCounters := database.NewPlayerCounterRepository(db)
 	return httpserver.New(httpserver.Dependencies{
 		Projects: project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
 		Players:  player.NewService(projects, players),
 		Levels:   level.NewService(projects, database.NewLevelRepository(db)),
+		Counters: counter.NewService(projects, players, counters, playerCounters),
 		Rules:    rule.NewService(projects, rules),
 		Progress: progression.NewService(database.NewProgressionTransactor(db)),
 		States:   database.NewPlayerStateRepository(db),
@@ -199,6 +207,75 @@ func TestRESTVerticalSliceProcessesDuplicateEventExactlyOnce(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, float64(100), state["xp"])
 	require.Equal(t, float64(1), state["level"])
+}
+
+func TestRESTCountersAreProjectScopedAndTrackAcceptedEvents(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+
+	projectID, apiKey := createProjectViaAPI(t, app, "Counters")
+	otherProjectID, otherAPIKey := createProjectViaAPI(t, app, "Other Counters")
+	resp, playerBody := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey,
+		map[string]any{"external_id": "student-counter"},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	playerID := playerBody["id"].(string)
+
+	resp, created := requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/counters", projectID), apiKey,
+		map[string]any{
+			"name": "completed lessons", "event_type": "lesson_completed",
+			"conditions": map[string]any{"course_id": "course_7"},
+		},
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	counterID := created["id"].(string)
+
+	resp, listed := requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/counters", projectID), apiKey, nil,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Len(t, listed["counters"], 1)
+	resp, otherCounters := requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/counters", otherProjectID), otherAPIKey, nil,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Empty(t, otherCounters["counters"])
+
+	resp, initial := requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/players/%s/counters", projectID, playerID), apiKey, nil,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	initialProgress := initial["counters"].([]any)[0].(map[string]any)
+	require.Equal(t, float64(0), initialProgress["value"])
+
+	eventBody := map[string]any{
+		"event_id": "evt_counter_api", "player_id": playerID, "type": "lesson_completed",
+		"occurred_at": time.Now().UTC().Format(time.RFC3339Nano),
+		"properties":  map[string]any{"course_id": "course_7"},
+	}
+	resp, _ = requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, eventBody,
+	)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp, _ = requestJSON(t, app, http.MethodPost,
+		fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, eventBody,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp, progress := requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/players/%s/counters", projectID, playerID), apiKey, nil,
+	)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	progressEntry := progress["counters"].([]any)[0].(map[string]any)
+	require.Equal(t, counterID, progressEntry["counter_id"])
+	require.Equal(t, float64(1), progressEntry["value"])
+
+	resp, crossProject := requestJSON(t, app, http.MethodGet,
+		fmt.Sprintf("/v1/projects/%s/players/%s/counters", otherProjectID, playerID), otherAPIKey, nil,
+	)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.Equal(t, "player_not_found", crossProject["error"].(map[string]any)["code"])
 }
 
 func TestProjectAPIKeyCannotCrossTenantBoundary(t *testing.T) {

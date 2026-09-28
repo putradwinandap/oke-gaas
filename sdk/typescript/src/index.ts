@@ -34,6 +34,12 @@ export interface CreateRuleInput {
   oncePerUtcDay?: boolean;
 }
 
+export interface CreateCounterInput {
+  name: string;
+  eventType: string;
+  conditions?: Record<string, unknown>;
+}
+
 export interface Rule {
   id: string;
   projectId: string;
@@ -85,6 +91,24 @@ export interface PlayerState {
 export interface LevelThreshold {
   number: number;
   minXp: number;
+}
+
+export interface CounterDefinition {
+  id: string;
+  projectId: string;
+  name: string;
+  eventType: string;
+  conditions: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface PlayerCounterProgress {
+  counterId: string;
+  name: string;
+  eventType: string;
+  conditions: Record<string, unknown>;
+  value: number;
+  updatedAt?: string;
 }
 
 interface ApiErrorEnvelope {
@@ -152,6 +176,35 @@ interface ApiLevelList {
   levels: ApiLevelThreshold[];
 }
 
+interface ApiCounter {
+  id: string;
+  project_id: string;
+  name: string;
+  event_type: string;
+  conditions: Record<string, unknown>;
+  created_at: string;
+}
+
+interface ApiCounterList {
+  project_id: string;
+  counters: ApiCounter[];
+}
+
+interface ApiPlayerCounterProgress {
+  counter_id: string;
+  name: string;
+  event_type: string;
+  conditions: Record<string, unknown>;
+  value: number;
+  updated_at?: string;
+}
+
+interface ApiPlayerCounterList {
+  project_id: string;
+  player_id: string;
+  counters: ApiPlayerCounterProgress[];
+}
+
 interface RequestResult {
   payload: unknown;
   status: number;
@@ -181,6 +234,8 @@ export interface GaasClient {
     create(input: CreatePlayerInput, options?: RequestOptions): Promise<Player>;
     /** Retrieve the current materialized Player State. */
     get(playerId: string, options?: RequestOptions): Promise<PlayerState>;
+    /** Retrieve all Project Counter progress for the Player, including zero values. */
+    getCounters(playerId: string, options?: RequestOptions): Promise<PlayerCounterProgress[]>;
   };
   rules: {
     /** Create a version-1 exact-event XP rule. */
@@ -189,6 +244,10 @@ export interface GaasClient {
   levels: {
     append(minXp: number, options?: RequestOptions): Promise<LevelThreshold>;
     list(options?: RequestOptions): Promise<LevelThreshold[]>;
+  };
+  counters: {
+    create(input: CreateCounterInput, options?: RequestOptions): Promise<CounterDefinition>;
+    list(options?: RequestOptions): Promise<CounterDefinition[]>;
   };
 }
 
@@ -347,6 +406,26 @@ export function createGaas(config: GaasConfig): GaasClient {
           ...(value.updated_at === undefined ? {} : { updatedAt: value.updated_at }),
         };
       },
+
+      async getCounters(playerId, options) {
+        const normalizedPlayerId = requireNonEmpty(playerId, "playerId");
+        const result = await request(
+          `${projectPath}/players/${encodeURIComponent(normalizedPlayerId)}/counters`,
+          {},
+          options,
+        );
+        const value = requireApiPlayerCounterList(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        requireResponseInvariant(value.player_id === normalizedPlayerId, result.status);
+        return value.counters.map((entry) => ({
+          counterId: entry.counter_id,
+          name: entry.name,
+          eventType: entry.event_type,
+          conditions: entry.conditions,
+          value: entry.value,
+          ...(entry.updated_at === undefined ? {} : { updatedAt: entry.updated_at }),
+        }));
+      },
     },
 
     levels: {
@@ -412,6 +491,51 @@ export function createGaas(config: GaasConfig): GaasClient {
           matchEvery: value.match_every,
           oncePerUtcDay: value.once_per_utc_day,
         };
+      },
+    },
+
+    counters: {
+      async create(input, options) {
+        const name = requireNonEmpty(input.name, "name");
+        const eventType = requireNonEmpty(input.eventType, "eventType");
+        const result = await request(
+          `${projectPath}/counters`,
+          {
+            method: "POST",
+            body: stringifyJson({
+              name,
+              event_type: eventType,
+              conditions: input.conditions ?? {},
+            }),
+          },
+          options,
+        );
+        const value = requireApiCounter(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        requireResponseInvariant(value.name === name, result.status);
+        requireResponseInvariant(value.event_type === eventType, result.status);
+        return {
+          id: value.id,
+          projectId: value.project_id,
+          name: value.name,
+          eventType: value.event_type,
+          conditions: value.conditions,
+          createdAt: value.created_at,
+        };
+      },
+
+      async list(options) {
+        const result = await request(`${projectPath}/counters`, {}, options);
+        const value = requireApiCounterList(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        return value.counters.map((entry) => ({
+          id: entry.id,
+          projectId: entry.project_id,
+          name: entry.name,
+          eventType: entry.event_type,
+          conditions: entry.conditions,
+          createdAt: entry.created_at,
+        }));
       },
     },
   };
@@ -570,6 +694,27 @@ function requireApiLevelList(value: unknown, status: number): ApiLevelList {
   return value;
 }
 
+function requireApiCounter(value: unknown, status: number): ApiCounter {
+  if (!isApiCounter(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
+function requireApiCounterList(value: unknown, status: number): ApiCounterList {
+  if (!isApiCounterList(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
+function requireApiPlayerCounterList(value: unknown, status: number): ApiPlayerCounterList {
+  if (!isApiPlayerCounterList(value)) {
+    throw invalidResponse(status);
+  }
+  return value;
+}
+
 function requireResponseInvariant(condition: boolean, status: number): void {
   if (!condition) {
     throw invalidResponse(status);
@@ -650,6 +795,41 @@ function isApiLevelList(value: unknown): value is ApiLevelList {
     && typeof value.project_id === "string"
     && Array.isArray(value.levels)
     && value.levels.every(isApiLevelThreshold);
+}
+
+function isApiCounter(value: unknown): value is ApiCounter {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.project_id === "string"
+    && typeof value.name === "string"
+    && typeof value.event_type === "string"
+    && isRecord(value.conditions)
+    && typeof value.created_at === "string";
+}
+
+function isApiCounterList(value: unknown): value is ApiCounterList {
+  return isRecord(value)
+    && typeof value.project_id === "string"
+    && Array.isArray(value.counters)
+    && value.counters.every(isApiCounter);
+}
+
+function isApiPlayerCounterProgress(value: unknown): value is ApiPlayerCounterProgress {
+  return isRecord(value)
+    && typeof value.counter_id === "string"
+    && typeof value.name === "string"
+    && typeof value.event_type === "string"
+    && isRecord(value.conditions)
+    && isNonNegativeSafeInteger(value.value)
+    && isOptionalString(value.updated_at);
+}
+
+function isApiPlayerCounterList(value: unknown): value is ApiPlayerCounterList {
+  return isRecord(value)
+    && typeof value.project_id === "string"
+    && typeof value.player_id === "string"
+    && Array.isArray(value.counters)
+    && value.counters.every(isApiPlayerCounterProgress);
 }
 
 function isPositiveSafeInteger(value: unknown): value is number {

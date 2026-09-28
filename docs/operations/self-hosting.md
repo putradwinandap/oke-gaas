@@ -104,6 +104,8 @@ Migration `000010_level_thresholds` adds Project-scoped Level configuration. Lev
 
 The `000010` down migration therefore fails closed while any Level thresholds are configured. Prefer a forward-fix; otherwise restore a verified backup from before Level thresholds were created. Do not delete configured thresholds merely to force a rollback. Schema downgrades must remain in reverse migration order: `000010` before `000009`.
 
+Migration `000011_counters` adds immutable Project Counter definitions and materialized Player Counter values. Once a Project has a Counter definition, a database trigger rejects Event-processing claims from binaries that do not declare Counter-aware processing; older binaries therefore fail closed for that Project instead of silently losing progress. The `000011` down migration also fails closed while any Counter definitions exist. Use a forward-fix or restore a verified backup from before Counters were configured. Downgrade in reverse migration order, with `000011` before `000010`.
+
 ## Backup
 
 The PostgreSQL volume is persistent, but a volume is not a backup.

@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	recoverer "github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/counter"
 	eventdomain "github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/level"
 	"github.com/putradwinandap/oke-gaas/internal/player"
@@ -29,6 +30,7 @@ type Dependencies struct {
 	Projects *project.ProvisionService
 	Players  *player.Service
 	Levels   *level.Service
+	Counters *counter.Service
 	Rules    *rule.Service
 	Progress *progression.Service
 	States   progression.Repository
@@ -168,6 +170,106 @@ func New(dependencies ...Dependencies) *fiber.App {
 			thresholds = append(thresholds, fiber.Map{"number": value.Number(), "min_xp": value.MinXP()})
 		}
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "levels": thresholds})
+	})
+
+	app.Post("/v1/projects/:projectId/counters", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		var request struct {
+			Name       string         `json:"name"`
+			EventType  string         `json:"event_type"`
+			Conditions map[string]any `json:"conditions"`
+		}
+		if err := c.Bind().Body(&request); err != nil {
+			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
+		}
+		value, err := deps.Counters.Create(ctx, projectID, request.Name, request.EventType, request.Conditions)
+		if err != nil {
+			switch {
+			case errors.Is(err, counter.ErrInvalidName), errors.Is(err, counter.ErrNameTooLong),
+				errors.Is(err, counter.ErrInvalidEventType), errors.Is(err, counter.ErrEventTypeTooLong),
+				errors.Is(err, counter.ErrInvalidConditions):
+				return writeError(c, fiber.StatusBadRequest, "invalid_counter", err.Error())
+			case errors.Is(err, counter.ErrNameTaken):
+				return writeError(c, fiber.StatusConflict, "counter_exists", err.Error())
+			case errors.Is(err, project.ErrNotFound):
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			default:
+				return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not create counter")
+			}
+		}
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"id":         value.ID(),
+			"project_id": value.ProjectID(),
+			"name":       value.Name(),
+			"event_type": value.EventType(),
+			"conditions": value.Conditions(),
+			"created_at": value.CreatedAt(),
+		})
+	})
+
+	app.Get("/v1/projects/:projectId/counters", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		values, err := deps.Counters.List(ctx, projectID)
+		if err != nil {
+			if errors.Is(err, project.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not list counters")
+		}
+		counters := make([]fiber.Map, 0, len(values))
+		for _, value := range values {
+			counters = append(counters, fiber.Map{
+				"id": value.ID(), "project_id": value.ProjectID(), "name": value.Name(),
+				"event_type": value.EventType(), "conditions": value.Conditions(), "created_at": value.CreatedAt(),
+			})
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "counters": counters})
+	})
+
+	app.Get("/v1/projects/:projectId/players/:playerId/counters", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		playerID := c.Params("playerId")
+		values, err := deps.Counters.PlayerProgress(ctx, projectID, playerID)
+		if err != nil {
+			if errors.Is(err, player.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "player_not_found", "player not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not load player counters")
+		}
+		counters := make([]fiber.Map, 0, len(values))
+		for _, value := range values {
+			entry := fiber.Map{
+				"counter_id": value.Counter.ID(),
+				"name":       value.Counter.Name(),
+				"event_type": value.Counter.EventType(),
+				"conditions": value.Counter.Conditions(),
+				"value":      value.Value,
+			}
+			if value.UpdatedAt != nil {
+				entry["updated_at"] = *value.UpdatedAt
+			}
+			counters = append(counters, entry)
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"project_id": projectID,
+			"player_id":  playerID,
+			"counters":   counters,
+		})
 	})
 
 	app.Post("/v1/projects/:projectId/rules", func(c fiber.Ctx) error {
