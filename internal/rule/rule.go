@@ -13,6 +13,11 @@ import (
 
 const maxMatchEvery = uint64(1<<63 - 1)
 
+const (
+	TypeXP    = "xp"
+	TypeBadge = "badge"
+)
+
 var (
 	ErrInvalidID              = errors.New("rule id is required")
 	ErrInvalidProjectID       = errors.New("project id is required")
@@ -20,6 +25,7 @@ var (
 	ErrInvalidEventType       = errors.New("rule event type is required")
 	ErrEventTypeTooLong       = errors.New("rule event type must not exceed 255 characters")
 	ErrInvalidXPAmount        = errors.New("rule xp amount must be greater than zero")
+	ErrInvalidBadgeID         = errors.New("rule badge id is required")
 	ErrInvalidConditions      = errors.New("rule conditions must be valid JSON")
 	ErrInvalidMatchEvery      = errors.New("rule match_every must fit a positive signed 64-bit integer")
 	ErrIncompatibleTimeWindow = errors.New("once_per_utc_day requires match_every=1")
@@ -33,7 +39,9 @@ type Rule struct {
 	projectID     string
 	version       uint64
 	eventType     string
+	rewardType    string
 	xpAmount      int64
+	badgeID       string
 	conditions    map[string]any
 	matchEvery    uint64
 	oncePerUTCDay bool
@@ -98,6 +106,7 @@ func NewTimed(id, projectID string, version uint64, eventType string, xpAmount i
 		projectID:     projectID,
 		version:       version,
 		eventType:     eventType,
+		rewardType:    TypeXP,
 		xpAmount:      xpAmount,
 		conditions:    normalizedConditions,
 		matchEvery:    matchEvery,
@@ -105,9 +114,41 @@ func NewTimed(id, projectID string, version uint64, eventType string, xpAmount i
 	}, nil
 }
 
+// NewBadge validates and creates an immutable Rule version granting one Badge.
+func NewBadge(id, projectID string, version uint64, eventType, badgeID string, conditions map[string]any) (*Rule, error) {
+	id = strings.TrimSpace(id)
+	projectID = strings.TrimSpace(projectID)
+	eventType = strings.TrimSpace(eventType)
+	badgeID = strings.TrimSpace(badgeID)
+	switch {
+	case id == "":
+		return nil, ErrInvalidID
+	case projectID == "":
+		return nil, ErrInvalidProjectID
+	case version == 0:
+		return nil, ErrInvalidVersion
+	case eventType == "":
+		return nil, ErrInvalidEventType
+	case utf8.RuneCountInString(eventType) > 255:
+		return nil, ErrEventTypeTooLong
+	case badgeID == "":
+		return nil, ErrInvalidBadgeID
+	}
+	normalized, err := normalizeJSONObject(conditions)
+	if err != nil {
+		return nil, err
+	}
+	return &Rule{id: id, projectID: projectID, version: version, eventType: eventType, rewardType: TypeBadge, badgeID: badgeID, conditions: normalized, matchEvery: 1}, nil
+}
+
 // Restore reconstructs a persisted Rule version.
 func Restore(id, projectID string, version uint64, eventType string, xpAmount int64, conditions map[string]any, matchEvery uint64, oncePerUTCDay bool) (*Rule, error) {
 	return NewTimed(id, projectID, version, eventType, xpAmount, conditions, matchEvery, oncePerUTCDay)
+}
+
+// RestoreBadge reconstructs a persisted Badge Rule version.
+func RestoreBadge(id, projectID string, version uint64, eventType, badgeID string, conditions map[string]any) (*Rule, error) {
+	return NewBadge(id, projectID, version, eventType, badgeID, conditions)
 }
 
 func (r Rule) ID() string          { return r.id }
@@ -115,6 +156,8 @@ func (r Rule) ProjectID() string   { return r.projectID }
 func (r Rule) Version() uint64     { return r.version }
 func (r Rule) EventType() string   { return r.eventType }
 func (r Rule) XPAmount() int64     { return r.xpAmount }
+func (r Rule) RewardType() string  { return r.rewardType }
+func (r Rule) BadgeID() string     { return r.badgeID }
 func (r Rule) MatchEvery() uint64  { return r.matchEvery }
 func (r Rule) OncePerUTCDay() bool { return r.oncePerUTCDay }
 

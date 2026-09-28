@@ -2,18 +2,22 @@ package database_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/badge"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
+	eventdomain "github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/level"
 	database "github.com/putradwinandap/oke-gaas/internal/platform/database"
 	httpserver "github.com/putradwinandap/oke-gaas/internal/platform/http"
@@ -41,9 +45,11 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
+	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_badge_aware_event_processing() CASCADE").Error)
 	for _, table := range []string{
 		"project_api_keys",
 		"event_processing",
+		"badge_definitions",
 		"player_counters",
 		"counter_definitions",
 		"rule_daily_claims",
@@ -70,6 +76,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000009_rule_daily_claims.up.sql",
 		"../../../migrations/000010_level_thresholds.up.sql",
 		"../../../migrations/000011_counters.up.sql",
+		"../../../migrations/000012_badge_rewards.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -85,12 +92,15 @@ func newHTTPIntegrationApp(db *gorm.DB) *fiber.App {
 	rules := database.NewRuleRepository(db)
 	counters := database.NewCounterRepository(db)
 	playerCounters := database.NewPlayerCounterRepository(db)
+	badges := database.NewBadgeRepository(db)
+	badgeGrants := database.NewBadgeGrantRepository(db)
 	return httpserver.New(httpserver.Dependencies{
 		Projects: project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
 		Players:  player.NewService(projects, players),
 		Levels:   level.NewService(projects, database.NewLevelRepository(db)),
 		Counters: counter.NewService(projects, players, counters, playerCounters),
-		Rules:    rule.NewService(projects, rules),
+		Badges:   badge.NewService(projects, players, badges, badgeGrants),
+		Rules:    rule.NewServiceWithBadges(projects, rules, badges),
 		Progress: progression.NewService(database.NewProgressionTransactor(db)),
 		States:   database.NewPlayerStateRepository(db),
 		Access:   access.NewService(database.NewProjectAPIKeyRepository(db)),
@@ -276,6 +286,118 @@ func TestRESTCountersAreProjectScopedAndTrackAcceptedEvents(t *testing.T) {
 	)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	require.Equal(t, "player_not_found", crossProject["error"].(map[string]any)["code"])
+}
+
+func TestRESTBadgeRewardIsAuditableProjectScopedAndUniquePerPlayer(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+	projectID, apiKey := createProjectViaAPI(t, app, "Badges")
+	otherProjectID, otherAPIKey := createProjectViaAPI(t, app, "Other Badges")
+	resp, playerBody := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey, map[string]any{"external_id": "student-badge"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	playerID := playerBody["id"].(string)
+	resp, createdBadge := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/badges", projectID), apiKey, map[string]any{"name": "Early Adopter", "description": "First cohort"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	badgeID := createdBadge["id"].(string)
+	resp, listed := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/badges", projectID), apiKey, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Len(t, listed["badges"], 1)
+	resp, _ = requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/rules", otherProjectID), otherAPIKey, map[string]any{"reward_type": "badge", "badge_id": badgeID, "event_type": "lesson_completed"})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp, _ = requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey, map[string]any{"reward_type": "badge", "badge_id": badgeID, "event_type": "lesson_completed", "conditions": map[string]any{"course": "go"}})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	badgeEventTime := time.Now().UTC().Format(time.RFC3339Nano)
+	postEvent := func(id, course string) (*http.Response, map[string]any) {
+		return requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, map[string]any{"event_id": id, "player_id": playerID, "type": "lesson_completed", "occurred_at": badgeEventTime, "properties": map[string]any{"course": course}})
+	}
+	resp, nonmatch := postEvent("evt_badge_no_match", "rust")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Empty(t, nonmatch["grants"])
+	resp, first := postEvent("evt_badge_1", "go")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	grants := first["grants"].([]any)
+	require.Len(t, grants, 1)
+	grant := grants[0].(map[string]any)
+	require.Equal(t, "badge", grant["reward_type"])
+	require.Equal(t, badgeID, grant["badge_id"])
+	require.Equal(t, float64(0), grant["amount"])
+	stateResp, state := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/players/%s/state", projectID, playerID), apiKey, nil)
+	require.Equal(t, http.StatusOK, stateResp.StatusCode)
+	require.Zero(t, state["xp"])
+	resp, retry := postEvent("evt_badge_1", "go")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, true, retry["duplicate"])
+	resp, second := postEvent("evt_badge_2", "go")
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Empty(t, second["grants"])
+	resp, collection := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/players/%s/badges", projectID, playerID), apiKey, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Len(t, collection["badges"], 1)
+	owned := collection["badges"].([]any)[0].(map[string]any)
+	require.Equal(t, badgeID, owned["badge_id"])
+	require.Equal(t, "evt_badge_1", owned["event_id"])
+	require.Equal(t, float64(1), owned["rule_version"])
+	resp, isolated := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/players/%s/badges", otherProjectID, playerID), otherAPIKey, nil)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.NotEmpty(t, isolated["error"])
+}
+
+func TestConcurrentBadgeEventsCreateOnePlayerOwnershipGrant(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+	projectID, apiKey := createProjectViaAPI(t, app, "Concurrent Badges")
+	resp, playerBody := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey, map[string]any{"external_id": "student-concurrent-badge"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	playerID := playerBody["id"].(string)
+	resp, badgeBody := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/badges", projectID), apiKey, map[string]any{"name": "Concurrent Badge"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	_, _ = requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/rules", projectID), apiKey, map[string]any{"reward_type": "badge", "badge_id": badgeBody["id"], "event_type": "lesson_completed"})
+
+	service := progression.NewService(database.NewProgressionTransactor(db))
+	const workers = 8
+	results := make(chan int, workers)
+	errors := make(chan error, workers)
+	var group sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		group.Add(1)
+		go func(index int) {
+			defer group.Done()
+			result, err := service.Process(context.Background(), eventdomain.IngestCommand{ID: fmt.Sprintf("evt_concurrent_badge_%d", index), ProjectID: projectID, PlayerID: playerID, Type: "lesson_completed", OccurredAt: time.Now().UTC(), Properties: map[string]any{}})
+			if err != nil {
+				errors <- err
+				return
+			}
+			results <- len(result.Grants)
+		}(i)
+	}
+	group.Wait()
+	close(results)
+	close(errors)
+	for err := range errors {
+		require.NoError(t, err)
+	}
+	grantCount := 0
+	for count := range results {
+		grantCount += count
+	}
+	require.Equal(t, 1, grantCount)
+	resp, collection := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/players/%s/badges", projectID, playerID), apiKey, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Len(t, collection["badges"], 1)
+	var auditRows []struct {
+		EventID string
+		RuleID string
+		RuleVersion uint64
+		RewardType string
+		BadgeID string
+	}
+	require.NoError(t, db.Table("reward_grants").Select("event_id, rule_id, rule_version, reward_type, badge_id").Where("project_id = ? AND player_id = ? AND reward_type = 'badge'", projectID, playerID).Scan(&auditRows).Error)
+	require.Len(t, auditRows, 1)
+	require.Regexp(t, `^evt_concurrent_badge_[0-7]$`, auditRows[0].EventID)
+	require.NotEmpty(t, auditRows[0].RuleID)
+	require.Equal(t, uint64(1), auditRows[0].RuleVersion)
+	require.Equal(t, "badge", auditRows[0].RewardType)
+	require.Equal(t, badgeBody["id"], auditRows[0].BadgeID)
 }
 
 func TestProjectAPIKeyCannotCrossTenantBoundary(t *testing.T) {

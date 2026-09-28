@@ -30,6 +30,9 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 		if err := tx.Exec("SELECT set_config('oke_gaas.counter_aware', 'true', true)").Error; err != nil {
 			return fmt.Errorf("declare counter-aware event processing: %w", err)
 		}
+		if err := tx.Exec("SELECT set_config('oke_gaas.badge_aware', 'true', true)").Error; err != nil {
+			return fmt.Errorf("declare badge-aware event processing: %w", err)
+		}
 		return fn(progression.Work{
 			Players:            NewPlayerRepository(tx),
 			Events:             NewEventRepository(tx),

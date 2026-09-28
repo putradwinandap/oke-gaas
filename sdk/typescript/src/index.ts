@@ -40,12 +40,19 @@ export interface CreateCounterInput {
   conditions?: Record<string, unknown>;
 }
 
+export interface CreateBadgeInput { name: string; description?: string; }
+export interface CreateBadgeRuleInput { eventType: string; badgeId: string; conditions?: Record<string, unknown>; }
+export interface BadgeDefinition { id: string; projectId: string; name: string; description: string; createdAt: string; }
+export interface PlayerBadge { badgeId: string; name: string; description: string; eventId: string; ruleId: string; ruleVersion: number; grantedAt: string; }
+
 export interface Rule {
   id: string;
   projectId: string;
   version: number;
   eventType: string;
   xp: number;
+  rewardType?: "xp" | "badge";
+  badgeId?: string;
   conditions: Record<string, unknown>;
   matchEvery: number;
   oncePerUtcDay: boolean;
@@ -64,6 +71,7 @@ export interface RewardGrant {
   ruleVersion: number;
   rewardType: string;
   amount: number;
+  badgeId?: string;
 }
 
 export interface TrackPlayerState {
@@ -131,6 +139,8 @@ interface ApiRule {
   version: number;
   event_type: string;
   xp: number;
+  reward_type?: "xp" | "badge";
+  badge_id?: string;
   conditions: Record<string, unknown>;
   match_every: number;
   once_per_utc_day: boolean;
@@ -142,7 +152,13 @@ interface ApiRewardGrant {
   rule_version: number;
   reward_type: string;
   amount: number;
+  badge_id?: string;
 }
+
+interface ApiBadge { id:string; project_id:string; name:string; description:string; created_at:string; }
+interface ApiBadgeList { project_id:string; badges:ApiBadge[]; }
+interface ApiPlayerBadge { badge_id:string; name:string; description:string; event_id:string; rule_id:string; rule_version:number; granted_at:string; }
+interface ApiPlayerBadgeList { project_id:string; player_id:string; badges:ApiPlayerBadge[]; }
 
 interface ApiTrackPlayerState {
   player_id: string;
@@ -236,10 +252,12 @@ export interface GaasClient {
     get(playerId: string, options?: RequestOptions): Promise<PlayerState>;
     /** Retrieve all Project Counter progress for the Player, including zero values. */
     getCounters(playerId: string, options?: RequestOptions): Promise<PlayerCounterProgress[]>;
+    getBadges(playerId: string, options?: RequestOptions): Promise<PlayerBadge[]>;
   };
   rules: {
     /** Create a version-1 exact-event XP rule. */
     create(input: CreateRuleInput, options?: RequestOptions): Promise<Rule>;
+    createBadge(input: CreateBadgeRuleInput, options?: RequestOptions): Promise<Rule>;
   };
   levels: {
     append(minXp: number, options?: RequestOptions): Promise<LevelThreshold>;
@@ -249,6 +267,7 @@ export interface GaasClient {
     create(input: CreateCounterInput, options?: RequestOptions): Promise<CounterDefinition>;
     list(options?: RequestOptions): Promise<CounterDefinition[]>;
   };
+  badges: { create(input: CreateBadgeInput, options?: RequestOptions): Promise<BadgeDefinition>; list(options?: RequestOptions): Promise<BadgeDefinition[]>; };
 }
 
 /**
@@ -356,6 +375,7 @@ export function createGaas(config: GaasConfig): GaasClient {
           ruleVersion: grant.rule_version,
           rewardType: grant.reward_type,
           amount: grant.amount,
+          ...(grant.badge_id === undefined ? {} : { badgeId: grant.badge_id }),
         })),
         state: {
           playerId: value.state.player_id,
@@ -426,6 +446,14 @@ export function createGaas(config: GaasConfig): GaasClient {
           ...(entry.updated_at === undefined ? {} : { updatedAt: entry.updated_at }),
         }));
       },
+
+      async getBadges(playerId, options) {
+        const normalizedPlayerId = requireNonEmpty(playerId, "playerId");
+        const result = await request(`${projectPath}/players/${encodeURIComponent(normalizedPlayerId)}/badges`, {}, options);
+        const value = requireApiPlayerBadgeList(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId && value.player_id === normalizedPlayerId, result.status);
+        return value.badges.map((item) => ({ badgeId:item.badge_id, name:item.name, description:item.description, eventId:item.event_id, ruleId:item.rule_id, ruleVersion:item.rule_version, grantedAt:item.granted_at }));
+      },
     },
 
     levels: {
@@ -479,6 +507,7 @@ export function createGaas(config: GaasConfig): GaasClient {
         requireResponseInvariant(value.project_id === projectId, result.status);
         requireResponseInvariant(value.event_type === eventType, result.status);
         requireResponseInvariant(value.xp === xp, result.status);
+        requireResponseInvariant(value.reward_type === undefined || value.reward_type === "xp", result.status);
         requireResponseInvariant(value.match_every === matchEvery, result.status);
         requireResponseInvariant(value.once_per_utc_day === oncePerUtcDay, result.status);
         return {
@@ -491,6 +520,15 @@ export function createGaas(config: GaasConfig): GaasClient {
           matchEvery: value.match_every,
           oncePerUtcDay: value.once_per_utc_day,
         };
+      },
+
+      async createBadge(input, options) {
+        const eventType = requireNonEmpty(input.eventType, "eventType");
+        const badgeId = requireNonEmpty(input.badgeId, "badgeId");
+        const result = await request(`${projectPath}/rules`, { method:"POST", body:stringifyJson({ event_type:eventType, reward_type:"badge", badge_id:badgeId, conditions:input.conditions ?? {} }) }, options);
+        const value = requireApiRule(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId && value.event_type === eventType && value.reward_type === "badge" && value.badge_id === badgeId, result.status);
+        return { id:value.id, projectId:value.project_id, version:value.version, eventType:value.event_type, xp:0, rewardType:"badge", badgeId, conditions:value.conditions, matchEvery:1, oncePerUtcDay:false };
       },
     },
 
@@ -536,6 +574,24 @@ export function createGaas(config: GaasConfig): GaasClient {
           conditions: entry.conditions,
           createdAt: entry.created_at,
         }));
+      },
+    },
+
+    badges: {
+      async create(input, options) {
+        const name = requireNonEmpty(input.name, "name");
+        const description = input.description === undefined ? "" : input.description;
+        if (typeof description !== "string") throw new TypeError("description must be a string");
+        const result = await request(`${projectPath}/badges`, { method:"POST", body:stringifyJson({ name, description }) }, options);
+        const value = requireApiBadge(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId && value.name === name, result.status);
+        return { id:value.id, projectId:value.project_id, name:value.name, description:value.description, createdAt:value.created_at };
+      },
+      async list(options) {
+        const result = await request(`${projectPath}/badges`, {}, options);
+        const value = requireApiBadgeList(result.payload, result.status);
+        requireResponseInvariant(value.project_id === projectId, result.status);
+        return value.badges.map((item) => ({ id:item.id, projectId:item.project_id, name:item.name, description:item.description, createdAt:item.created_at }));
       },
     },
   };
@@ -715,6 +771,10 @@ function requireApiPlayerCounterList(value: unknown, status: number): ApiPlayerC
   return value;
 }
 
+function requireApiBadge(value: unknown, status:number): ApiBadge { if (!isApiBadge(value)) throw invalidResponse(status); return value; }
+function requireApiBadgeList(value: unknown, status:number): ApiBadgeList { if (!isApiBadgeList(value)) throw invalidResponse(status); return value; }
+function requireApiPlayerBadgeList(value: unknown, status:number): ApiPlayerBadgeList { if (!isApiPlayerBadgeList(value)) throw invalidResponse(status); return value; }
+
 function requireResponseInvariant(condition: boolean, status: number): void {
   if (!condition) {
     throw invalidResponse(status);
@@ -743,11 +803,18 @@ function isApiRule(value: unknown): value is ApiRule {
     && typeof value.project_id === "string"
     && isPositiveSafeInteger(value.version)
     && typeof value.event_type === "string"
-    && isPositiveSafeInteger(value.xp)
+    && isNonNegativeSafeInteger(value.xp)
+    && (value.reward_type === undefined || value.reward_type === "xp" || value.reward_type === "badge")
+    && isOptionalString(value.badge_id)
     && isRecord(value.conditions)
     && isPositiveSafeInteger(value.match_every)
     && typeof value.once_per_utc_day === "boolean";
 }
+
+function isApiBadge(value:unknown): value is ApiBadge { return isRecord(value) && typeof value.id === "string" && typeof value.project_id === "string" && typeof value.name === "string" && typeof value.description === "string" && typeof value.created_at === "string"; }
+function isApiBadgeList(value:unknown): value is ApiBadgeList { return isRecord(value) && typeof value.project_id === "string" && Array.isArray(value.badges) && value.badges.every(isApiBadge); }
+function isApiPlayerBadge(value:unknown): value is ApiPlayerBadge { return isRecord(value) && typeof value.badge_id === "string" && typeof value.name === "string" && typeof value.description === "string" && typeof value.event_id === "string" && typeof value.rule_id === "string" && isPositiveSafeInteger(value.rule_version) && typeof value.granted_at === "string"; }
+function isApiPlayerBadgeList(value:unknown): value is ApiPlayerBadgeList { return isRecord(value) && typeof value.project_id === "string" && typeof value.player_id === "string" && Array.isArray(value.badges) && value.badges.every(isApiPlayerBadge); }
 
 function isApiRewardGrant(value: unknown): value is ApiRewardGrant {
   return isRecord(value)
@@ -755,6 +822,7 @@ function isApiRewardGrant(value: unknown): value is ApiRewardGrant {
     && typeof value.rule_id === "string"
     && isPositiveSafeInteger(value.rule_version)
     && typeof value.reward_type === "string"
+    && isOptionalString(value.badge_id)
     && Number.isSafeInteger(value.amount);
 }
 

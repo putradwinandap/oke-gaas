@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -60,6 +61,24 @@ func (s *Service) Process(ctx context.Context, value *event.Event) ([]*Grant, er
 	grants := make([]*Grant, 0, len(rules))
 	for _, candidate := range rules {
 		if candidate == nil || !candidate.Matches(value) {
+			continue
+		}
+		if candidate.RewardType() == rule.TypeBadge {
+			id, err := s.newID()
+			if err != nil {
+				return nil, fmt.Errorf("create badge grant id: %w", err)
+			}
+			grant, err := NewBadgeGrant(id, value.ProjectID(), value.PlayerID(), value.ID(), candidate.ID(), candidate.Version(), candidate.BadgeID(), s.now())
+			if err != nil {
+				return nil, fmt.Errorf("build badge grant: %w", err)
+			}
+			if err := s.grants.Save(ctx, grant); err != nil {
+				if errors.Is(err, ErrAlreadyExists) {
+					continue
+				}
+				return nil, fmt.Errorf("save badge reward grant: %w", err)
+			}
+			grants = append(grants, grant)
 			continue
 		}
 		if candidate.OncePerUTCDay() {

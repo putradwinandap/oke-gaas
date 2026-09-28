@@ -29,7 +29,7 @@ Client Application
 +--------------------------+
 |       Domain Modules     |
 | Project / Player / Event |
-| Rule / Reward / Counter  |
+| Rule / Reward / Counter / Badge |
 +------------+-------------+
              |
              v
@@ -63,7 +63,7 @@ Evaluate latest rule version
 Match exact Event type + optional top-level property conditions
       |
       v
-Create Reward Grant
+Create XP or Badge Reward Grant
       |
       v
 Update matching Player Counters
@@ -75,7 +75,7 @@ Update Player State
 Commit
 ```
 
-The initial transaction should keep accepted Event processing, reward history, Player Counter progress, and Player State consistent.
+The initial transaction should keep accepted Event processing, reward history, unique Badge ownership, Player Counter progress, and Player State consistent.
 
 ## Domain Events
 
@@ -105,6 +105,7 @@ Important persistence properties:
 - idempotent ingestion
 - version-aware rules with optional exact top-level Event property conditions
 - auditable reward grants
+- immutable Project Badges with unique Player ownership and Rule-version audit
 - materialized player state
 - Project-defined Player Counters, updated atomically with accepted Event processing
 

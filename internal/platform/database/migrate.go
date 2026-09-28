@@ -22,6 +22,7 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&levelThresholdRecord{},
 		&counterDefinitionRecord{},
 		&playerCounterStateRecord{},
+		&badgeDefinitionRecord{},
 		&playerStateRecord{},
 		&eventProcessingRecord{},
 	); err != nil {
@@ -50,6 +51,12 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		ON counter_definitions(project_id, name)
 	`).Error; err != nil {
 		return fmt.Errorf("create development counter name index: %w", err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_badges_project_name ON badge_definitions(project_id, name)`).Error; err != nil {
+		return fmt.Errorf("create development badge name index: %w", err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_reward_grants_player_badge ON reward_grants(project_id, player_id, badge_id) WHERE reward_type = 'badge'`).Error; err != nil {
+		return fmt.Errorf("create development unique badge ownership index: %w", err)
 	}
 
 	constraints := []struct {
@@ -141,6 +148,9 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 				ON DELETE RESTRICT
 			`,
 		},
+		{table: "badge_definitions", name: "fk_badge_definitions_project", statement: `ALTER TABLE badge_definitions ADD CONSTRAINT fk_badge_definitions_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "rules", name: "fk_rules_badge_project", statement: `ALTER TABLE rules ADD CONSTRAINT fk_rules_badge_project FOREIGN KEY (project_id, badge_id) REFERENCES badge_definitions(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "reward_grants", name: "fk_reward_grants_badge_project", statement: `ALTER TABLE reward_grants ADD CONSTRAINT fk_reward_grants_badge_project FOREIGN KEY (project_id, badge_id) REFERENCES badge_definitions(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
 		{
 			table: "player_counters",
 			name:  "fk_player_counters_player_project",

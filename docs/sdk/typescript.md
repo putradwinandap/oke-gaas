@@ -13,6 +13,7 @@ The SDK may:
 - normalize HTTP/API/transport failures into `GaasError`
 - validate successful response payloads before exposing typed SDK results
 - enforce a finite client request deadline and propagate caller cancellation
+- create/list Badge definitions, configure Badge reward Rules, and read Player Badge collections
 
 The SDK must not:
 
@@ -21,6 +22,7 @@ The SDK must not:
 - reproduce tenant authorization rules
 - infer Player State locally
 - replace the server's idempotency or transaction semantics
+- decide whether a Player owns a Badge or locally evaluate Badge Rules
 
 A caller that needs idempotency across process restarts or caller-managed retries must supply its own stable `eventId`. An SDK-generated ID is stable only for the lifetime of that `track()` call.
 
