@@ -385,11 +385,11 @@ func TestConcurrentBadgeEventsCreateOnePlayerOwnershipGrant(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Len(t, collection["badges"], 1)
 	var auditRows []struct {
-		EventID string
-		RuleID string
+		EventID     string
+		RuleID      string
 		RuleVersion uint64
-		RewardType string
-		BadgeID string
+		RewardType  string
+		BadgeID     string
 	}
 	require.NoError(t, db.Table("reward_grants").Select("event_id, rule_id, rule_version, reward_type, badge_id").Where("project_id = ? AND player_id = ? AND reward_type = 'badge'", projectID, playerID).Scan(&auditRows).Error)
 	require.Len(t, auditRows, 1)
