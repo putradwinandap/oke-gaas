@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	recoverer "github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/achievement"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
 	eventdomain "github.com/putradwinandap/oke-gaas/internal/event"
 	"github.com/putradwinandap/oke-gaas/internal/level"
@@ -27,15 +28,16 @@ import (
 const requestOperationTimeout = 10 * time.Second
 
 type Dependencies struct {
-	Projects *project.ProvisionService
-	Players  *player.Service
-	Levels   *level.Service
-	Counters *counter.Service
-	Rules    *rule.Service
-	Progress *progression.Service
-	States   progression.Repository
-	Access   *access.Service
-	AdminKey string
+	Projects     *project.ProvisionService
+	Players      *player.Service
+	Levels       *level.Service
+	Counters     *counter.Service
+	Achievements *achievement.Service
+	Rules        *rule.Service
+	Progress     *progression.Service
+	States       progression.Repository
+	Access       *access.Service
+	AdminKey     string
 }
 
 // New creates the HTTP delivery adapter for the Oke Gaas API.
@@ -270,6 +272,90 @@ func New(dependencies ...Dependencies) *fiber.App {
 			"player_id":  playerID,
 			"counters":   counters,
 		})
+	})
+
+	app.Post("/v1/projects/:projectId/achievements", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		var request struct {
+			Name      string `json:"name"`
+			CounterID string `json:"counter_id"`
+			Target    int64  `json:"target"`
+		}
+		if err := c.Bind().Body(&request); err != nil {
+			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
+		}
+		value, err := deps.Achievements.Create(ctx, projectID, request.Name, request.CounterID, request.Target)
+		if err != nil {
+			switch {
+			case errors.Is(err, achievement.ErrInvalidName), errors.Is(err, achievement.ErrNameTooLong),
+				errors.Is(err, achievement.ErrInvalidCounterID), errors.Is(err, achievement.ErrCounterIDTooLong),
+				errors.Is(err, achievement.ErrInvalidTarget):
+				return writeError(c, fiber.StatusBadRequest, "invalid_achievement", err.Error())
+			case errors.Is(err, achievement.ErrNameTaken):
+				return writeError(c, fiber.StatusConflict, "achievement_exists", err.Error())
+			case errors.Is(err, counter.ErrCounterNotFound):
+				return writeError(c, fiber.StatusBadRequest, "invalid_counter_reference", "counter must belong to this project")
+			case errors.Is(err, project.ErrNotFound):
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			default:
+				return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not create achievement")
+			}
+		}
+		return c.Status(fiber.StatusCreated).JSON(achievementDefinitionResponse(value))
+	})
+
+	app.Get("/v1/projects/:projectId/achievements", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		values, err := deps.Achievements.List(ctx, projectID)
+		if err != nil {
+			if errors.Is(err, project.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not list achievements")
+		}
+		achievements := make([]fiber.Map, 0, len(values))
+		for _, value := range values {
+			achievements = append(achievements, achievementDefinitionResponse(value))
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "achievements": achievements})
+	})
+
+	app.Get("/v1/projects/:projectId/players/:playerId/achievements", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID, playerID := c.Params("projectId"), c.Params("playerId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		values, err := deps.Achievements.PlayerProgress(ctx, projectID, playerID)
+		if err != nil {
+			if errors.Is(err, player.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "player_not_found", "player not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not load player achievements")
+		}
+		achievements := make([]fiber.Map, 0, len(values))
+		for _, value := range values {
+			entry := achievementDefinitionResponse(value.Achievement)
+			entry["unlocked"] = value.Unlock != nil
+			if value.Unlock != nil {
+				entry["event_id"] = value.Unlock.EventID()
+				entry["counter_value"] = value.Unlock.CounterValue()
+				entry["unlocked_at"] = value.Unlock.UnlockedAt()
+			}
+			achievements = append(achievements, entry)
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "player_id": playerID, "achievements": achievements})
 	})
 
 	app.Post("/v1/projects/:projectId/rules", func(c fiber.Ctx) error {
@@ -534,4 +620,11 @@ func writeError(c fiber.Ctx, status int, code, message string) error {
 			"message": message,
 		},
 	})
+}
+
+func achievementDefinitionResponse(value *achievement.Definition) fiber.Map {
+	return fiber.Map{
+		"id": value.ID(), "project_id": value.ProjectID(), "name": value.Name(),
+		"counter_id": value.CounterID(), "target": value.Target(), "created_at": value.CreatedAt(),
+	}
 }

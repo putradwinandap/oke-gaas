@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/putradwinandap/oke-gaas/internal/access"
+	"github.com/putradwinandap/oke-gaas/internal/achievement"
 	"github.com/putradwinandap/oke-gaas/internal/counter"
 	"github.com/putradwinandap/oke-gaas/internal/level"
 	database "github.com/putradwinandap/oke-gaas/internal/platform/database"
@@ -43,6 +44,8 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
 	for _, table := range []string{
 		"project_api_keys",
+		"achievement_unlocks",
+		"achievement_definitions",
 		"event_processing",
 		"player_counters",
 		"counter_definitions",
@@ -70,6 +73,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000009_rule_daily_claims.up.sql",
 		"../../../migrations/000010_level_thresholds.up.sql",
 		"../../../migrations/000011_counters.up.sql",
+		"../../../migrations/000012_achievements.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -90,6 +94,11 @@ func newHTTPIntegrationApp(db *gorm.DB) *fiber.App {
 		Players:  player.NewService(projects, players),
 		Levels:   level.NewService(projects, database.NewLevelRepository(db)),
 		Counters: counter.NewService(projects, players, counters, playerCounters),
+		Achievements: achievement.NewService(
+			projects, players, counters,
+			database.NewAchievementRepository(db),
+			database.NewAchievementUnlockRepository(db),
+		),
 		Rules:    rule.NewService(projects, rules),
 		Progress: progression.NewService(database.NewProgressionTransactor(db)),
 		States:   database.NewPlayerStateRepository(db),
@@ -663,4 +672,69 @@ func TestRESTXPLevelsAreProjectScopedAndDerivedFromXP(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, float64(3), state["level"])
+}
+
+func TestRESTAchievementsUnlockOnceAndRejectCrossProjectCounter(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db)
+	projectID, apiKey := createProjectViaAPI(t, app, "Achievement Project")
+	otherProjectID, otherAPIKey := createProjectViaAPI(t, app, "Other Achievement Project")
+	resp, playerBody := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey, map[string]any{"external_id": "achievement-player"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	player := playerBody["id"].(string)
+	_, otherCounter := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/counters", otherProjectID), otherAPIKey, map[string]any{
+		"name": "other_lessons", "event_type": "lesson_completed",
+	})
+	counterID := otherCounter["id"].(string)
+	resp, crossReference := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/achievements", projectID), apiKey, map[string]any{
+		"name": "invalid", "counter_id": counterID, "target": 1,
+	})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, "invalid_counter_reference", crossReference["error"].(map[string]any)["code"])
+
+	_, ownCounter := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/counters", projectID), apiKey, map[string]any{
+		"name": "lessons_completed", "event_type": "lesson_completed",
+	})
+	counterID = ownCounter["id"].(string)
+	resp, created := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/achievements", projectID), apiKey, map[string]any{
+		"name": "First Lesson", "counter_id": counterID, "target": 2,
+	})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	achievementID := created["id"].(string)
+
+	resp, invalid := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/achievements", projectID), apiKey, map[string]any{
+		"name": "Zero Target", "counter_id": counterID, "target": 0,
+	})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, "invalid_achievement", invalid["error"].(map[string]any)["code"])
+
+	_, listed := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/achievements", projectID), apiKey, nil)
+	require.Len(t, listed["achievements"], 1)
+	resp, otherList := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/achievements", otherProjectID), otherAPIKey, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Empty(t, otherList["achievements"])
+
+	track := func(id string, expectedStatus int) {
+		resp, _ := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, map[string]any{
+			"event_id": id, "player_id": player, "type": "lesson_completed", "occurred_at": "2026-09-28T10:00:00Z",
+		})
+		require.Equal(t, expectedStatus, resp.StatusCode)
+	}
+	track("evt_achievement_api_1", http.StatusCreated)
+	track("evt_achievement_api_1", http.StatusOK)
+	_, progress := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/players/%s/achievements", projectID, player), apiKey, nil)
+	entry := progress["achievements"].([]any)[0].(map[string]any)
+	require.Equal(t, false, entry["unlocked"])
+	track("evt_achievement_api_2", http.StatusCreated)
+	_, unlocked := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/players/%s/achievements", projectID, player), apiKey, nil)
+	entry = unlocked["achievements"].([]any)[0].(map[string]any)
+	require.Equal(t, achievementID, entry["id"])
+	require.Equal(t, true, entry["unlocked"])
+	require.Equal(t, "evt_achievement_api_2", entry["event_id"])
+	require.Equal(t, float64(2), entry["counter_value"])
+	require.NotEmpty(t, entry["unlocked_at"])
+
+	resp, crossProjectPlayer := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/players/%s/achievements", otherProjectID, player), otherAPIKey, nil)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.Equal(t, "player_not_found", crossProjectPlayer["error"].(map[string]any)["code"])
 }

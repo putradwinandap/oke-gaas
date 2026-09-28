@@ -75,7 +75,7 @@ Update Player State
 Commit
 ```
 
-The initial transaction should keep accepted Event processing, reward history, Player Counter progress, and Player State consistent.
+The initial transaction should keep accepted Event processing, reward history, Player Counter progress, Achievement unlocks, and Player State consistent.
 
 ## Domain Events
 
@@ -107,6 +107,7 @@ Important persistence properties:
 - auditable reward grants
 - materialized player state
 - Project-defined Player Counters, updated atomically with accepted Event processing
+- Counter-based Achievement unlocks, persisted once with the triggering Event
 
 ## Evolution
 

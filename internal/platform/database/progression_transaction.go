@@ -27,8 +27,8 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 	}
 
 	if err := t.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT set_config('oke_gaas.counter_aware', 'true', true)").Error; err != nil {
-			return fmt.Errorf("declare counter-aware event processing: %w", err)
+		if err := tx.Exec("SELECT set_config('oke_gaas.counter_aware', 'true', true), set_config('oke_gaas.achievement_aware', 'true', true)").Error; err != nil {
+			return fmt.Errorf("declare mechanic-aware event processing: %w", err)
 		}
 		return fn(progression.Work{
 			Players:            NewPlayerRepository(tx),
@@ -39,6 +39,8 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 			DailyClaims:        NewRuleDailyClaimRepository(tx),
 			CounterDefinitions: NewCounterRepository(tx),
 			CounterStates:      NewPlayerCounterRepository(tx),
+			Achievements:       NewAchievementRepository(tx),
+			AchievementUnlocks: NewAchievementUnlockRepository(tx),
 			States:             NewPlayerStateRepository(tx),
 			Claims:             NewEventProcessingRepository(tx),
 		})

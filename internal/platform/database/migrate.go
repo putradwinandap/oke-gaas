@@ -22,6 +22,8 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&levelThresholdRecord{},
 		&counterDefinitionRecord{},
 		&playerCounterStateRecord{},
+		&achievementDefinitionRecord{},
+		&achievementUnlockRecord{},
 		&playerStateRecord{},
 		&eventProcessingRecord{},
 	); err != nil {
@@ -50,6 +52,12 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		ON counter_definitions(project_id, name)
 	`).Error; err != nil {
 		return fmt.Errorf("create development counter name index: %w", err)
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_achievements_project_name
+		ON achievement_definitions(project_id, name)
+	`).Error; err != nil {
+		return fmt.Errorf("create development achievement name index: %w", err)
 	}
 
 	constraints := []struct {
@@ -161,6 +169,54 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 				ADD CONSTRAINT fk_player_counters_definition
 				FOREIGN KEY (project_id, counter_id)
 				REFERENCES counter_definitions(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "achievement_definitions",
+			name:  "fk_achievement_definitions_counter",
+			statement: `
+				ALTER TABLE achievement_definitions
+				ADD CONSTRAINT fk_achievement_definitions_counter
+				FOREIGN KEY (project_id, counter_id)
+				REFERENCES counter_definitions(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "achievement_unlocks",
+			name:  "fk_achievement_unlocks_player_project",
+			statement: `
+				ALTER TABLE achievement_unlocks
+				ADD CONSTRAINT fk_achievement_unlocks_player_project
+				FOREIGN KEY (project_id, player_id)
+				REFERENCES players(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "achievement_unlocks",
+			name:  "fk_achievement_unlocks_definition",
+			statement: `
+				ALTER TABLE achievement_unlocks
+				ADD CONSTRAINT fk_achievement_unlocks_definition
+				FOREIGN KEY (project_id, achievement_id)
+				REFERENCES achievement_definitions(project_id, id)
+				ON UPDATE RESTRICT
+				ON DELETE RESTRICT
+			`,
+		},
+		{
+			table: "achievement_unlocks",
+			name:  "fk_achievement_unlocks_event",
+			statement: `
+				ALTER TABLE achievement_unlocks
+				ADD CONSTRAINT fk_achievement_unlocks_event
+				FOREIGN KEY (project_id, event_id)
+				REFERENCES events(project_id, id)
 				ON UPDATE RESTRICT
 				ON DELETE RESTRICT
 			`,
