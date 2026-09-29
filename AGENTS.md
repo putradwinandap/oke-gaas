@@ -847,10 +847,115 @@ Prefer short-lived branches.
 
 Do not mix unrelated refactors, formatting changes, and feature behavior in one commit unless they are inseparable.
 
+### 20.1 Execution-environment blocker policy
+
+When a command fails because of sandbox, network, filesystem, or permission restrictions:
+
+- do not repeatedly retry equivalent commands
+- do not inspect unrelated application code
+- do not modify application code as a workaround for an environment restriction
+- request the required permission or elevated capability when the execution environment supports doing so
+- after one failed retry, stop retrying and report the environment blocker clearly
+- distinguish an environment failure from an application failure before changing production code
+
+Environment restrictions must not be "fixed" by weakening application behavior, bypassing validation, changing unrelated dependencies, or introducing repository changes whose only purpose is to accommodate the agent runtime.
+
+### 20.2 Repository synchronization rules
+
+Repository synchronization is part of every implementation task, not optional cleanup.
+
+Before starting any issue or task, synchronize remote references:
+
+```bash
+git fetch --prune origin
+git status
+```
+
+Before modifying files, verify that the working tree is clean.
+
+If the task starts from the default branch:
+
+```bash
+git checkout main
+git pull --ff-only origin main
+```
+
+Create the feature branch only from the synchronized default branch:
+
+```bash
+git checkout -b <branch-name>
+```
+
+Alternatively, branch directly from the latest remote default branch:
+
+```bash
+git checkout -b <branch-name> origin/main
+```
+
+Never start implementation from a stale base branch.
+
+Do not:
+
+- create a feature branch from an outdated local `main`
+- assume local `main` is synchronized with `origin/main`
+- begin implementation before refreshing remote references
+- overwrite remote history merely to resolve synchronization problems
+- use `git push --force` on shared branches
+
+If local and remote history differ unexpectedly, stop implementation and inspect the divergence before making application changes.
+
+Before opening or merging a Pull Request, synchronize remote references again:
+
+```bash
+git fetch --prune origin
+```
+
+Check whether the feature branch is behind its target branch.
+
+For a local or otherwise unshared feature branch, prefer rebasing onto the latest target branch:
+
+```bash
+git rebase origin/main
+```
+
+Resolve conflicts locally and run the complete applicable validation/test suite afterward.
+
+If the branch is already shared, or rebasing would rewrite history used by another developer or agent, prefer integrating the latest target branch without destructive history rewriting:
+
+```bash
+git merge origin/main
+```
+
+Never use `git push --force`.
+
+If rewriting an owned feature branch is explicitly necessary, use:
+
+```bash
+git push --force-with-lease
+```
+
+Only do so after verifying that no other developer or agent depends on the branch.
+
+#### Pre-PR invariant
+
+A Pull Request may be created only when:
+
+1. Remote references have just been fetched.
+2. The feature branch is based on or synchronized with the latest target branch.
+3. No unresolved merge conflicts remain.
+4. The working tree is clean.
+5. Required tests, linters, formatters, static checks, and validations pass.
+6. `git diff --check` passes.
+
+Every coding agent must treat the following as the standard development lifecycle:
+
+> **Fetch -> Synchronize base -> Implement -> Validate -> Re-fetch -> Synchronize target -> Validate -> PR**
+
 Before merge:
 
 - perform a manual code review before spending GitHub Actions CI quota
 - run the relevant formatter, static checks, unit tests, and integration tests locally first
+- confirm repository synchronization and the Pre-PR invariant still hold
 - do not automatically run the full PR CI merely because a PR is opened, synchronized, or receives another commit
 - after manual review finds the current revision ready for validation, apply the `ci-ready` label
 - applying `ci-ready` is the explicit manual gate that starts full PR CI
@@ -860,7 +965,7 @@ Before merge:
 - relevant documentation must be current
 - issue acceptance criteria must be satisfied
 
-### 20.1 CI execution and quota policy
+### 20.3 CI execution and quota policy
 
 GitHub Actions CI is a final remote validation gate, not the first feedback loop.
 
@@ -902,7 +1007,7 @@ Do not leave stale completed branches or completed issues open without a reason.
 
 ---
 
-## 20.2 Self-hosting operations baseline
+## 20.4 Self-hosting operations baseline
 
 The initial self-hosting deployment is Docker Compose with one PostgreSQL service, one one-shot migration job, and one API service.
 
