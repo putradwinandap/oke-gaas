@@ -184,3 +184,19 @@ await gaas.rules.create({
 The day is derived from the Event's `occurredAt` in UTC. This first time-aware slice requires `matchEvery: 1`; custom time zones, rolling windows, streak state, and general scheduling expressions are intentionally out of scope.
 
 The client also supports Project-scoped Achievement creation/listing and Player unlock reads through `achievements` and `players.getAchievements()`. Achievement target values must be positive safe integers.
+
+### Daily Streaks
+
+Create and list immutable Project Streak definitions and retrieve a Player's current active run:
+
+```ts
+await gaas.streaks.create({
+  name: "daily login",
+  eventType: "daily_login",
+  conditions: { source: "app" },
+});
+
+const streaks = await gaas.players.getStreaks("player_123");
+```
+
+Streak days use UTC `occurredAt` dates. The current length is derived from auditable qualified dates, supports historical repair from late Events, and becomes zero once the latest qualified day is older than yesterday UTC.

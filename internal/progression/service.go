@@ -14,6 +14,7 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/reward"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
 	"github.com/putradwinandap/oke-gaas/internal/shared/identity"
+	"github.com/putradwinandap/oke-gaas/internal/streak"
 )
 
 // ProcessingClaims coordinates exactly-once processing attempts for a persisted Event.
@@ -35,6 +36,8 @@ type Work struct {
 	Achievements       achievement.Repository
 	AchievementUnlocks achievement.UnlockRepository
 	BadgeDefinitions   badge.Repository
+	StreakDefinitions  streak.Repository
+	StreakClaims       streak.ClaimRepository
 	States             Repository
 	Claims             ProcessingClaims
 }
@@ -124,6 +127,11 @@ func (s *Service) Process(ctx context.Context, command event.IngestCommand) (*Pr
 			return identity.New("unlock")
 		}); err != nil {
 			return fmt.Errorf("process achievement unlocks: %w", err)
+		}
+		if work.StreakDefinitions != nil && work.StreakClaims != nil {
+			if err := streak.ProcessEvent(ctx, work.StreakDefinitions, work.StreakClaims, ingested.Event); err != nil {
+				return fmt.Errorf("process streaks: %w", err)
+			}
 		}
 
 		var xp int64

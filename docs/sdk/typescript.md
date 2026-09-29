@@ -62,3 +62,5 @@ npm run check
 `npm run check` performs strict TypeScript type-checking, builds declarations/JavaScript, and runs Node's test runner against the compiled SDK.
 
 The Project-scoped client supports immutable Achievement creation/listing and Player Achievement unlock reads. Achievement targets are positive safe integers; unlock metadata comes from the server.
+
+It also supports immutable daily Streak creation/listing through `streaks.create()` / `streaks.list()` and Player progress through `players.getStreaks()`. Definitions match exact Event types and optional exact top-level properties. Qualified days use UTC `occurredAt`; current consecutive length is derived from the auditable day set, and becomes zero when the latest qualified day is older than yesterday UTC.

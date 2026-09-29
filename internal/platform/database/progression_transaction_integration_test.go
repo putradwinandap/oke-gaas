@@ -35,7 +35,8 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_badge_aware_event_processing() CASCADE").Error)
-	for _, table := range []string{"project_api_keys", "achievement_unlocks", "achievement_definitions", "event_processing", "badge_definitions", "player_counters", "counter_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "level_thresholds", "reward_grants", "rules", "events", "players", "projects"} {
+	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_streak_aware_event_processing() CASCADE").Error)
+	for _, table := range []string{"project_api_keys", "streak_days", "streak_event_claims", "streak_definitions", "achievement_unlocks", "achievement_definitions", "event_processing", "badge_definitions", "player_counters", "counter_definitions", "rule_daily_claims", "rule_match_counts", "player_states", "level_thresholds", "reward_grants", "rules", "events", "players", "projects"} {
 		require.NoError(t, db.Exec("DROP TABLE IF EXISTS "+table+" CASCADE").Error)
 	}
 	for _, path := range []string{
@@ -50,6 +51,7 @@ func openProgressionIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000011_counters.up.sql",
 		"../../../migrations/000012_achievements.up.sql",
 		"../../../migrations/000013_badge_rewards.up.sql",
+		"../../../migrations/000014_streaks.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)

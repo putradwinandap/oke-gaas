@@ -29,7 +29,7 @@ Client Application
 +--------------------------+
 |       Domain Modules     |
 | Project / Player / Event |
-| Rule / Reward / Counter / Badge |
+| Rule / Reward / Counter / Streak / Badge |
 +------------+-------------+
              |
              v
@@ -76,6 +76,7 @@ Commit
 ```
 
 The initial transaction should keep accepted Event processing, reward history, unique Badge ownership, Player Counter progress, Achievement unlocks, and Player State consistent.
+It also persists matching qualified Streak days in that same transaction.
 
 ## Domain Events
 
@@ -108,6 +109,7 @@ Important persistence properties:
 - immutable Project Badges with unique Player ownership and Rule-version audit
 - materialized player state
 - Project-defined Player Counters, updated atomically with accepted Event processing
+- Project-defined daily Streaks, with auditable qualified UTC days and derived current runs
 
 ## Evolution
 

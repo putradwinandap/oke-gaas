@@ -21,6 +21,7 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/progression"
 	"github.com/putradwinandap/oke-gaas/internal/project"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
+	"github.com/putradwinandap/oke-gaas/internal/streak"
 )
 
 func main() {
@@ -73,6 +74,8 @@ func run() int {
 	states := database.NewPlayerStateRepository(db)
 	counters := database.NewCounterRepository(db)
 	playerCounters := database.NewPlayerCounterRepository(db)
+	streaks := database.NewStreakRepository(db)
+	streakDays := database.NewStreakDayRepository(db)
 	badges := database.NewBadgeRepository(db)
 	badgeGrants := database.NewBadgeGrantRepository(db)
 	achievements := achievement.NewService(projects, players, counters, database.NewAchievementRepository(db), database.NewAchievementUnlockRepository(db))
@@ -84,6 +87,7 @@ func run() int {
 		Counters:     counter.NewService(projects, players, counters, playerCounters),
 		Badges:       badge.NewService(projects, players, badges, badgeGrants),
 		Achievements: achievements,
+		Streaks:      streak.NewService(projects, players, streaks, streakDays),
 		Rules:        rule.NewServiceWithBadges(projects, rules, badges),
 		Progress:     progression.NewService(database.NewProgressionTransactor(db)),
 		States:       states,

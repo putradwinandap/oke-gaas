@@ -26,6 +26,7 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/progression"
 	"github.com/putradwinandap/oke-gaas/internal/project"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
+	"github.com/putradwinandap/oke-gaas/internal/streak"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -47,8 +48,12 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_counter_aware_event_processing() CASCADE").Error)
 	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_badge_aware_event_processing() CASCADE").Error)
+	require.NoError(t, db.Exec("DROP FUNCTION IF EXISTS require_streak_aware_event_processing() CASCADE").Error)
 	for _, table := range []string{
 		"project_api_keys",
+		"streak_days",
+		"streak_event_claims",
+		"streak_definitions",
 		"achievement_unlocks",
 		"achievement_definitions",
 		"event_processing",
@@ -81,6 +86,7 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 		"../../../migrations/000011_counters.up.sql",
 		"../../../migrations/000012_achievements.up.sql",
 		"../../../migrations/000013_badge_rewards.up.sql",
+		"../../../migrations/000014_streaks.up.sql",
 	} {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -90,28 +96,36 @@ func openHTTPIntegrationDatabase(t *testing.T) *gorm.DB {
 	return db
 }
 
-func newHTTPIntegrationApp(db *gorm.DB) *fiber.App {
+func newHTTPIntegrationApp(db *gorm.DB, streakClock ...func() time.Time) *fiber.App {
 	projects := database.NewProjectRepository(db)
 	players := database.NewPlayerRepository(db)
 	rules := database.NewRuleRepository(db)
 	counters := database.NewCounterRepository(db)
 	playerCounters := database.NewPlayerCounterRepository(db)
 	badges := database.NewBadgeRepository(db)
+	streaks := database.NewStreakRepository(db)
+	streakDays := database.NewStreakDayRepository(db)
 	badgeGrants := database.NewBadgeGrantRepository(db)
 	achievements := achievement.NewService(projects, players, counters, database.NewAchievementRepository(db), database.NewAchievementUnlockRepository(db))
-	return httpserver.New(httpserver.Dependencies{
+	streakService := streak.NewService(projects, players, streaks, streakDays)
+	if len(streakClock) > 0 {
+		streakService = streak.NewServiceWithClock(projects, players, streaks, streakDays, streakClock[0])
+	}
+	app := httpserver.New(httpserver.Dependencies{
 		Projects:     project.NewProvisionService(database.NewProjectProvisionTransactor(db)),
 		Players:      player.NewService(projects, players),
 		Levels:       level.NewService(projects, database.NewLevelRepository(db)),
 		Counters:     counter.NewService(projects, players, counters, playerCounters),
 		Badges:       badge.NewService(projects, players, badges, badgeGrants),
 		Achievements: achievements,
+		Streaks:      streakService,
 		Rules:        rule.NewServiceWithBadges(projects, rules, badges),
 		Progress:     progression.NewService(database.NewProgressionTransactor(db)),
 		States:       database.NewPlayerStateRepository(db),
 		Access:       access.NewService(database.NewProjectAPIKeyRepository(db)),
 		AdminKey:     "test-admin-key",
 	})
+	return app
 }
 
 func requestJSON(t *testing.T, app *fiber.App, method, path, token string, body any) (*http.Response, map[string]any) {
@@ -292,6 +306,43 @@ func TestRESTCountersAreProjectScopedAndTrackAcceptedEvents(t *testing.T) {
 	)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 	require.Equal(t, "player_not_found", crossProject["error"].(map[string]any)["code"])
+}
+
+func TestRESTStreaksTrackUniqueDaysAndOutOfOrderHistory(t *testing.T) {
+	db := openHTTPIntegrationDatabase(t)
+	app := newHTTPIntegrationApp(db, func() time.Time { return time.Date(2026, 9, 3, 15, 0, 0, 0, time.UTC) })
+	projectID, apiKey := createProjectViaAPI(t, app, "Streaks")
+	resp, playerBody := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/players", projectID), apiKey, map[string]any{"external_id": "streak-player"})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	playerID := playerBody["id"].(string)
+	resp, created := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/streaks", projectID), apiKey, map[string]any{"name": "daily login", "event_type": "daily_login", "conditions": map[string]any{"source": "app"}})
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.Equal(t, "streak", strings.Split(created["id"].(string), "_")[0])
+	resp, listed := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/streaks", projectID), apiKey, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Len(t, listed["streaks"], 1)
+	track := func(id string, day int, source string) {
+		t.Helper()
+		body := map[string]any{"event_id": id, "player_id": playerID, "type": "daily_login", "occurred_at": time.Date(2026, 9, day, 12, 0, 0, 0, time.UTC).Format(time.RFC3339), "properties": map[string]any{"source": source}}
+		r, _ := requestJSON(t, app, http.MethodPost, fmt.Sprintf("/v1/projects/%s/events", projectID), apiKey, body)
+		require.True(t, r.StatusCode == http.StatusCreated || r.StatusCode == http.StatusOK)
+	}
+	track("evt_streak_sep1", 1, "app")
+	track("evt_streak_sep2", 2, "app")
+	track("evt_streak_sep2_again", 2, "app")
+	track("evt_streak_sep3", 3, "app")
+	track("evt_streak_wrong", 4, "web")
+	resp, state := requestJSON(t, app, http.MethodGet, fmt.Sprintf("/v1/projects/%s/players/%s/streaks", projectID, playerID), apiKey, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	entry := state["streaks"].([]any)[0].(map[string]any)
+	require.Equal(t, float64(3), entry["current"])
+	track("evt_streak_late", 2, "app")
+	var count int64
+	require.NoError(t, db.Table("streak_days").Where("project_id = ? AND player_id = ?", projectID, playerID).Count(&count).Error)
+	require.Equal(t, int64(3), count)
+	var claims int64
+	require.NoError(t, db.Table("streak_event_claims").Where("project_id = ? AND player_id = ?", projectID, playerID).Count(&claims).Error)
+	require.Equal(t, int64(5), claims)
 }
 
 func TestRESTBadgeRewardIsAuditableProjectScopedAndUniquePerPlayer(t *testing.T) {

@@ -39,6 +39,9 @@ export interface CreateCounterInput {
   eventType: string;
   conditions?: Record<string, unknown>;
 }
+export interface CreateStreakInput { name: string; eventType: string; conditions?: Record<string, unknown>; }
+export interface StreakDefinition { id: string; projectId: string; name: string; eventType: string; conditions: Record<string, unknown>; createdAt: string; }
+export interface PlayerStreakProgress extends StreakDefinition { current: number; latestDay?: string; }
 
 export interface CreateBadgeInput { name: string; description?: string; }
 export interface CreateBadgeRuleInput { eventType: string; badgeId: string; conditions?: Record<string, unknown>; }
@@ -164,6 +167,10 @@ interface ApiPlayerBadge { badge_id:string; name:string; description:string; eve
 interface ApiPlayerBadgeList { project_id:string; player_id:string; badges:ApiPlayerBadge[]; }
 interface ApiAchievement { id:string; project_id:string; name:string; counter_id:string; target:number; created_at:string; }
 interface ApiAchievementList { project_id:string; achievements:ApiAchievement[]; }
+interface ApiStreak { id:string; project_id:string; name:string; event_type:string; conditions:Record<string,unknown>; created_at:string; }
+interface ApiStreakList { project_id:string; streaks:ApiStreak[]; }
+interface ApiPlayerStreak extends ApiStreak { current:number; latest_day?:string; }
+interface ApiPlayerStreakList { project_id:string; player_id:string; streaks:ApiPlayerStreak[]; }
 interface ApiPlayerAchievement extends ApiAchievement { unlocked:boolean; event_id?:string; counter_value?:number; unlocked_at?:string; }
 interface ApiPlayerAchievementList { project_id:string; player_id:string; achievements:ApiPlayerAchievement[]; }
 
@@ -261,6 +268,7 @@ export interface GaasClient {
     getCounters(playerId: string, options?: RequestOptions): Promise<PlayerCounterProgress[]>;
     getBadges(playerId: string, options?: RequestOptions): Promise<PlayerBadge[]>;
     getAchievements(playerId: string, options?: RequestOptions): Promise<PlayerAchievementProgress[]>;
+    getStreaks(playerId: string, options?: RequestOptions): Promise<PlayerStreakProgress[]>;
   };
   rules: {
     /** Create a version-1 exact-event XP rule. */
@@ -277,6 +285,7 @@ export interface GaasClient {
   };
   badges: { create(input: CreateBadgeInput, options?: RequestOptions): Promise<BadgeDefinition>; list(options?: RequestOptions): Promise<BadgeDefinition[]>; };
   achievements: { create(input: CreateAchievementInput, options?: RequestOptions): Promise<AchievementDefinition>; list(options?: RequestOptions): Promise<AchievementDefinition[]>; };
+  streaks: { create(input: CreateStreakInput, options?: RequestOptions): Promise<StreakDefinition>; list(options?: RequestOptions): Promise<StreakDefinition[]>; };
 }
 
 /**
@@ -470,6 +479,13 @@ export function createGaas(config: GaasConfig): GaasClient {
         requireResponseInvariant(value.project_id === projectId && value.player_id === normalizedPlayerId, result.status);
         return value.achievements.map((entry) => ({ id:entry.id, projectId:entry.project_id, name:entry.name, counterId:entry.counter_id, target:entry.target, createdAt:entry.created_at, unlocked:entry.unlocked, ...(entry.event_id === undefined ? {} : {eventId:entry.event_id}), ...(entry.counter_value === undefined ? {} : {counterValue:entry.counter_value}), ...(entry.unlocked_at === undefined ? {} : {unlockedAt:entry.unlocked_at}) }));
       },
+      async getStreaks(playerId, options) {
+        const normalizedPlayerId=requireNonEmpty(playerId,"playerId");
+        const result=await request(`${projectPath}/players/${encodeURIComponent(normalizedPlayerId)}/streaks`,{},options);
+        const value=requireApiPlayerStreakList(result.payload,result.status);
+        requireResponseInvariant(value.project_id===projectId&&value.player_id===normalizedPlayerId,result.status);
+        return value.streaks.map((entry)=>({id:entry.id,projectId:entry.project_id,name:entry.name,eventType:entry.event_type,conditions:entry.conditions,createdAt:entry.created_at,current:entry.current,...(entry.latest_day===undefined?{}:{latestDay:entry.latest_day})}));
+      },
     },
 
     levels: {
@@ -628,6 +644,18 @@ export function createGaas(config: GaasConfig): GaasClient {
         return value.achievements.map((entry) => ({id:entry.id, projectId:entry.project_id, name:entry.name, counterId:entry.counter_id, target:entry.target, createdAt:entry.created_at}));
       },
     },
+    streaks: {
+      async create(input,options) {
+        const name=requireNonEmpty(input.name,"name"), eventType=requireNonEmpty(input.eventType,"eventType");
+        const result=await request(`${projectPath}/streaks`,{method:"POST",body:stringifyJson({name,event_type:eventType,conditions:input.conditions??{}})},options);
+        const value=requireApiStreak(result.payload,result.status);requireResponseInvariant(value.project_id===projectId&&value.name===name&&value.event_type===eventType,result.status);
+        return {id:value.id,projectId:value.project_id,name:value.name,eventType:value.event_type,conditions:value.conditions,createdAt:value.created_at};
+      },
+      async list(options) {
+        const result=await request(`${projectPath}/streaks`,{},options),value=requireApiStreakList(result.payload,result.status);requireResponseInvariant(value.project_id===projectId,result.status);
+        return value.streaks.map((entry)=>({id:entry.id,projectId:entry.project_id,name:entry.name,eventType:entry.event_type,conditions:entry.conditions,createdAt:entry.created_at}));
+      },
+    },
   };
 }
 
@@ -750,6 +778,9 @@ function requireApiPlayer(value: unknown, status: number): ApiPlayer {
 }
 
 function requireApiAchievement(value: unknown, status: number): ApiAchievement { if (!isApiAchievement(value)) throw invalidResponse(status); return value; }
+function requireApiStreak(value: unknown, status: number): ApiStreak { if (!isApiStreak(value)) throw invalidResponse(status); return value; }
+function requireApiStreakList(value: unknown, status: number): ApiStreakList { if (!isApiStreakList(value)) throw invalidResponse(status); return value; }
+function requireApiPlayerStreakList(value: unknown, status: number): ApiPlayerStreakList { if (!isApiPlayerStreakList(value)) throw invalidResponse(status); return value; }
 function requireApiAchievementList(value: unknown, status: number): ApiAchievementList { if (!isApiAchievementList(value)) throw invalidResponse(status); return value; }
 function requireApiPlayerAchievementList(value: unknown, status: number): ApiPlayerAchievementList { if (!isApiPlayerAchievementList(value)) throw invalidResponse(status); return value; }
 
@@ -852,6 +883,10 @@ function isApiRule(value: unknown): value is ApiRule {
 function isApiBadge(value:unknown): value is ApiBadge { return isRecord(value) && typeof value.id === "string" && typeof value.project_id === "string" && typeof value.name === "string" && typeof value.description === "string" && typeof value.created_at === "string"; }
 function isApiBadgeList(value:unknown): value is ApiBadgeList { return isRecord(value) && typeof value.project_id === "string" && Array.isArray(value.badges) && value.badges.every(isApiBadge); }
 function isApiAchievement(value:unknown): value is ApiAchievement { return isRecord(value) && typeof value.id === "string" && typeof value.project_id === "string" && typeof value.name === "string" && typeof value.counter_id === "string" && isPositiveSafeInteger(value.target) && typeof value.created_at === "string"; }
+function isApiStreak(value:unknown): value is ApiStreak { return isRecord(value)&&typeof value.id==="string"&&typeof value.project_id==="string"&&typeof value.name==="string"&&typeof value.event_type==="string"&&isRecord(value.conditions)&&typeof value.created_at==="string"; }
+function isApiStreakList(value:unknown): value is ApiStreakList { return isRecord(value)&&typeof value.project_id==="string"&&Array.isArray(value.streaks)&&value.streaks.every(isApiStreak); }
+function isApiPlayerStreak(value:unknown): value is ApiPlayerStreak { return isApiStreak(value)&&isRecord(value)&&isNonNegativeSafeInteger(value.current)&&(value.latest_day===undefined||typeof value.latest_day==="string"); }
+function isApiPlayerStreakList(value:unknown): value is ApiPlayerStreakList { return isRecord(value)&&typeof value.project_id==="string"&&typeof value.player_id==="string"&&Array.isArray(value.streaks)&&value.streaks.every(isApiPlayerStreak); }
 function isApiAchievementList(value:unknown): value is ApiAchievementList { return isRecord(value) && typeof value.project_id === "string" && Array.isArray(value.achievements) && value.achievements.every(isApiAchievement); }
 function isApiPlayerAchievement(value:unknown): value is ApiPlayerAchievement { if (!isApiAchievement(value) || !isRecord(value) || typeof value.unlocked !== "boolean") return false; if (!value.unlocked) return value.event_id === undefined && value.counter_value === undefined && value.unlocked_at === undefined; return typeof value.event_id === "string" && isPositiveSafeInteger(value.counter_value) && typeof value.unlocked_at === "string"; }
 function isApiPlayerAchievementList(value:unknown): value is ApiPlayerAchievementList { return isRecord(value) && typeof value.project_id === "string" && typeof value.player_id === "string" && Array.isArray(value.achievements) && value.achievements.every(isApiPlayerAchievement); }

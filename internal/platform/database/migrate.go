@@ -25,6 +25,10 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 		&badgeDefinitionRecord{},
 		&achievementDefinitionRecord{},
 		&achievementUnlockRecord{},
+		&streakDefinitionRecord{},
+		&streakDayRecord{},
+		&streakEventClaimRecord{},
+		&streakEventClaimRecord{},
 		&playerStateRecord{},
 		&eventProcessingRecord{},
 	); err != nil {
@@ -62,6 +66,15 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_achievements_project_name ON achievement_definitions(project_id, name)`).Error; err != nil {
 		return fmt.Errorf("create development achievement name index: %w", err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_streaks_project_name ON streak_definitions(project_id, name)`).Error; err != nil {
+		return fmt.Errorf("create development streak name index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_streak_days_player_history ON streak_days(project_id, player_id, streak_id, qualified_day DESC)`).Error; err != nil {
+		return fmt.Errorf("create development streak history index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_streak_event_claims_day ON streak_event_claims(project_id, player_id, streak_id, qualified_day)`).Error; err != nil {
+		return fmt.Errorf("create development streak event day index: %w", err)
 	}
 
 	constraints := []struct {
@@ -154,6 +167,14 @@ func AutoMigrateCoreForDevelopment(db *gorm.DB) error {
 			`,
 		},
 		{table: "badge_definitions", name: "fk_badge_definitions_project", statement: `ALTER TABLE badge_definitions ADD CONSTRAINT fk_badge_definitions_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "streak_definitions", name: "fk_streak_definitions_project", statement: `ALTER TABLE streak_definitions ADD CONSTRAINT fk_streak_definitions_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "streak_days", name: "fk_streak_days_definition", statement: `ALTER TABLE streak_days ADD CONSTRAINT fk_streak_days_definition FOREIGN KEY (project_id, streak_id) REFERENCES streak_definitions(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "streak_event_claims", name: "fk_streak_event_claims_player_project", statement: `ALTER TABLE streak_event_claims ADD CONSTRAINT fk_streak_event_claims_player_project FOREIGN KEY (project_id, player_id) REFERENCES players(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "streak_event_claims", name: "fk_streak_event_claims_definition", statement: `ALTER TABLE streak_event_claims ADD CONSTRAINT fk_streak_event_claims_definition FOREIGN KEY (project_id, streak_id) REFERENCES streak_definitions(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "streak_event_claims", name: "fk_streak_event_claims_event", statement: `ALTER TABLE streak_event_claims ADD CONSTRAINT fk_streak_event_claims_event FOREIGN KEY (project_id, event_id) REFERENCES events(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "streak_event_claims", name: "fk_streak_event_claims_player_project", statement: `ALTER TABLE streak_event_claims ADD CONSTRAINT fk_streak_event_claims_player_project FOREIGN KEY (project_id, player_id) REFERENCES players(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "streak_event_claims", name: "fk_streak_event_claims_definition", statement: `ALTER TABLE streak_event_claims ADD CONSTRAINT fk_streak_event_claims_definition FOREIGN KEY (project_id, streak_id) REFERENCES streak_definitions(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
+		{table: "streak_event_claims", name: "fk_streak_event_claims_event", statement: `ALTER TABLE streak_event_claims ADD CONSTRAINT fk_streak_event_claims_event FOREIGN KEY (project_id, event_id) REFERENCES events(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
 		{table: "rules", name: "fk_rules_badge_project", statement: `ALTER TABLE rules ADD CONSTRAINT fk_rules_badge_project FOREIGN KEY (project_id, badge_id) REFERENCES badge_definitions(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
 		{table: "reward_grants", name: "fk_reward_grants_badge_project", statement: `ALTER TABLE reward_grants ADD CONSTRAINT fk_reward_grants_badge_project FOREIGN KEY (project_id, badge_id) REFERENCES badge_definitions(project_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT`},
 		{

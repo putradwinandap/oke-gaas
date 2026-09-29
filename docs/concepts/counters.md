@@ -11,3 +11,5 @@ Counter updates share the Event processing transaction with event completion, re
 The API creates and lists Project Counter definitions at `/v1/projects/{projectId}/counters`, and returns all Counter values (including zero values) at `/v1/projects/{projectId}/players/{playerId}/counters`.
 
 These Counters are explicit Player progress indicators, not analytics aggregates or arbitrary gauges. Rule count thresholds remain separate: `rule_match_counts` track evaluation progress for a particular Rule version and do not serve as public Counter state.
+
+Daily consecutive Streaks are a separate mechanic. They derive active runs from auditable qualified UTC days rather than using increment-only Counter values. See [Daily Streaks](streaks.md).
