@@ -81,6 +81,21 @@ test("track authenticates, generates event identity, and maps the result", async
   });
 });
 
+test("Streak SDK creates, lists, and reads Project-scoped progress", async () => {
+  let call=0;
+  await withServer(async(request,response)=>{
+    call++;
+    if(call===1){assert.equal(request.method,"POST");assert.equal(request.url,"/v1/projects/proj_test/streaks");assert.deepEqual(await readJson(request),{name:"Daily login",event_type:"daily_login",conditions:{source:"app"}});response.writeHead(201,{"content-type":"application/json"});response.end(JSON.stringify({id:"streak_1",project_id:"proj_test",name:"Daily login",event_type:"daily_login",conditions:{source:"app"},created_at:"2026-09-01T00:00:00Z"}));return;}
+    if(call===2){assert.equal(request.method,"GET");assert.equal(request.url,"/v1/projects/proj_test/streaks");response.writeHead(200,{"content-type":"application/json"});response.end(JSON.stringify({project_id:"proj_test",streaks:[{id:"streak_1",project_id:"proj_test",name:"Daily login",event_type:"daily_login",conditions:{source:"app"},created_at:"2026-09-01T00:00:00Z"}]}));return;}
+    assert.equal(request.url,"/v1/projects/proj_test/players/player_1/streaks");response.writeHead(200,{"content-type":"application/json"});response.end(JSON.stringify({project_id:"proj_test",player_id:"player_1",streaks:[{id:"streak_1",project_id:"proj_test",name:"Daily login",event_type:"daily_login",conditions:{source:"app"},created_at:"2026-09-01T00:00:00Z",current:2,latest_day:"2026-09-29"}]}));
+  },async baseUrl=>{
+    const gaas=createGaas({projectId:"proj_test",apiKey:"secret-key",baseUrl});
+    assert.equal((await gaas.streaks.create({name:"Daily login",eventType:"daily_login",conditions:{source:"app"}})).id,"streak_1");
+    assert.equal((await gaas.streaks.list()).length,1);
+    assert.deepEqual(await gaas.players.getStreaks("player_1"),[{id:"streak_1",projectId:"proj_test",name:"Daily login",eventType:"daily_login",conditions:{source:"app"},createdAt:"2026-09-01T00:00:00Z",current:2,latestDay:"2026-09-29"}]);
+  });
+});
+
 test("track preserves caller-supplied event identity and timestamp", async () => {
   await withServer(async (request, response) => {
     const body = await readJson(request);

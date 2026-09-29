@@ -33,6 +33,9 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 		if err := tx.Exec("SELECT set_config('oke_gaas.badge_aware', 'true', true)").Error; err != nil {
 			return fmt.Errorf("declare badge-aware event processing: %w", err)
 		}
+		if err := tx.Exec("SELECT set_config('oke_gaas.streak_aware', 'true', true)").Error; err != nil {
+			return fmt.Errorf("declare Streak-aware event processing: %w", err)
+		}
 		badgeDefinitions := NewBadgeRepository(tx)
 		rules := NewRuleRepository(tx)
 		grants := NewRewardGrantRepository(tx)
@@ -48,6 +51,8 @@ func (t *ProgressionTransactor) WithinTransaction(ctx context.Context, fn func(p
 			Achievements:       NewAchievementRepository(tx),
 			AchievementUnlocks: NewAchievementUnlockRepository(tx),
 			BadgeDefinitions:   badgeDefinitions,
+			StreakDefinitions:  NewStreakRepository(tx),
+			StreakClaims:       NewStreakDayRepository(tx),
 			States:             NewPlayerStateRepository(tx),
 			Claims:             NewEventProcessingRepository(tx),
 		})

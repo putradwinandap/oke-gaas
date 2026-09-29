@@ -21,6 +21,7 @@ import (
 	"github.com/putradwinandap/oke-gaas/internal/progression"
 	"github.com/putradwinandap/oke-gaas/internal/project"
 	"github.com/putradwinandap/oke-gaas/internal/rule"
+	"github.com/putradwinandap/oke-gaas/internal/streak"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -35,6 +36,7 @@ type Dependencies struct {
 	Counters     *counter.Service
 	Badges       *badge.Service
 	Achievements *achievement.Service
+	Streaks      *streak.Service
 	Rules        *rule.Service
 	Progress     *progression.Service
 	States       progression.Repository
@@ -427,6 +429,82 @@ func New(dependencies ...Dependencies) *fiber.App {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "player_id": playerID, "achievements": items})
 	})
 
+	app.Post("/v1/projects/:projectId/streaks", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		var request struct {
+			Name       string         `json:"name"`
+			EventType  string         `json:"event_type"`
+			Conditions map[string]any `json:"conditions"`
+		}
+		if err := c.Bind().Body(&request); err != nil {
+			return writeError(c, fiber.StatusBadRequest, "invalid_request", "request body is invalid")
+		}
+		value, err := deps.Streaks.Create(ctx, projectID, request.Name, request.EventType, request.Conditions)
+		if err != nil {
+			switch {
+			case errors.Is(err, streak.ErrInvalidName), errors.Is(err, streak.ErrNameTooLong), errors.Is(err, streak.ErrInvalidEventType), errors.Is(err, streak.ErrEventTypeTooLong), errors.Is(err, streak.ErrInvalidConditions):
+				return writeError(c, fiber.StatusBadRequest, "invalid_streak", err.Error())
+			case errors.Is(err, streak.ErrNameTaken):
+				return writeError(c, fiber.StatusConflict, "streak_exists", err.Error())
+			case errors.Is(err, project.ErrNotFound):
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			default:
+				return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not create streak")
+			}
+		}
+		return c.Status(fiber.StatusCreated).JSON(streakDefinitionResponse(value))
+	})
+	app.Get("/v1/projects/:projectId/streaks", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID := c.Params("projectId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		values, err := deps.Streaks.List(ctx, projectID)
+		if err != nil {
+			if errors.Is(err, project.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "project_not_found", "project not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not list streaks")
+		}
+		items := make([]fiber.Map, 0, len(values))
+		for _, value := range values {
+			items = append(items, streakDefinitionResponse(value))
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "streaks": items})
+	})
+	app.Get("/v1/projects/:projectId/players/:playerId/streaks", func(c fiber.Ctx) error {
+		ctx, cancel := requestContext(c)
+		defer cancel()
+		projectID, playerID := c.Params("projectId"), c.Params("playerId")
+		if !authenticateProject(ctx, c, deps.Access, projectID) {
+			return nil
+		}
+		values, err := deps.Streaks.PlayerProgress(ctx, projectID, playerID)
+		if err != nil {
+			if errors.Is(err, player.ErrNotFound) {
+				return writeError(c, fiber.StatusNotFound, "player_not_found", "player not found")
+			}
+			return writeError(c, fiber.StatusInternalServerError, "internal_error", "could not load player streaks")
+		}
+		items := make([]fiber.Map, 0, len(values))
+		for _, value := range values {
+			entry := streakDefinitionResponse(value.Streak)
+			entry["current"] = value.Current
+			if value.LatestDay != nil {
+				entry["latest_day"] = value.LatestDay.Format("2006-01-02")
+			}
+			items = append(items, entry)
+		}
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"project_id": projectID, "player_id": playerID, "streaks": items})
+	})
+
 	app.Post("/v1/projects/:projectId/rules", func(c fiber.Ctx) error {
 		ctx, cancel := requestContext(c)
 		defer cancel()
@@ -720,4 +798,8 @@ func writeError(c fiber.Ctx, status int, code, message string) error {
 
 func achievementDefinitionResponse(value *achievement.Definition) fiber.Map {
 	return fiber.Map{"id": value.ID(), "project_id": value.ProjectID(), "name": value.Name(), "counter_id": value.CounterID(), "target": value.Target(), "created_at": value.CreatedAt()}
+}
+
+func streakDefinitionResponse(value *streak.Definition) fiber.Map {
+	return fiber.Map{"id": value.ID(), "project_id": value.ProjectID(), "name": value.Name(), "event_type": value.EventType(), "conditions": value.Conditions(), "created_at": value.CreatedAt()}
 }
